@@ -18,9 +18,9 @@
 
 ## 常用路径
 
-- 仓库根目录：`/Users/tommyclaw/OMI/HomeCopy`
-- 项目根目录：`/Users/tommyclaw/OMI/HomeCopy/HomeCopy`
-- macOS 打包脚本：`/Users/tommyclaw/OMI/HomeCopy/HomeCopy/MacOS/package_macos.command`
+- 仓库根目录：`/Users/tommyclaw/OMI/Tools`
+- 项目根目录：`/Users/tommyclaw/OMI/Tools/HomeCopy`
+- macOS 打包脚本：`/Users/tommyclaw/OMI/Tools/HomeCopy/MacOS/package_macos.command`
 - Windows 共享目录：`/Volumes/OMI-WinDev/AIAgent/HomeCopy`
 
 ## 常用操作
@@ -30,13 +30,13 @@
 在仓库根目录执行：
 
 ```bash
-bash /Users/tommyclaw/OMI/HomeCopy/HomeCopy/MacOS/package_macos.command
+bash /Users/tommyclaw/OMI/Tools/HomeCopy/MacOS/package_macos.command
 ```
 
 产物默认位于：
 
 ```text
-/Users/tommyclaw/OMI/HomeCopy/HomeCopy/MacOS/dist/HomeCopyClient-macOS/HomeCopyClient.app
+/Users/tommyclaw/OMI/Tools/HomeCopy/MacOS/dist/HomeCopyClient-macOS/HomeCopyClient.app
 ```
 
 ### 2. Windows 工程同步
@@ -56,7 +56,7 @@ rsync -a --delete \
   --exclude 'Windows/logs/' \
   --exclude 'MacOS/configs/clients/client.local.json' \
   --exclude 'Windows/configs/clients/client.local.json' \
-  /Users/tommyclaw/OMI/HomeCopy/HomeCopy/ \
+  /Users/tommyclaw/OMI/Tools/HomeCopy/ \
   /Volumes/OMI-WinDev/AIAgent/HomeCopy/
 ```
 

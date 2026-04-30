@@ -7,7 +7,7 @@
 ## 目录结构
 
 ```text
-/Users/tommyclaw/OMI/HomeCopy
+/Users/tommyclaw/OMI/Tools
 ├── AGENTS.md
 ├── README.md
 └── HomeCopy/
@@ -69,13 +69,13 @@
 ### macOS 打包
 
 ```bash
-bash /Users/tommyclaw/OMI/HomeCopy/HomeCopy/MacOS/package_macos.command
+bash /Users/tommyclaw/OMI/Tools/HomeCopy/MacOS/package_macos.command
 ```
 
 ### Python 语法检查
 
 ```bash
-python3 -m py_compile /Users/tommyclaw/OMI/HomeCopy/HomeCopy/Common/homecopy_shared/main_window.py
+python3 -m py_compile /Users/tommyclaw/OMI/Tools/HomeCopy/Common/homecopy_shared/main_window.py
 ```
 
 ### Windows 工程同步
@@ -87,7 +87,7 @@ rsync -a --delete \
   --exclude 'MacOS/dist/' \
   --exclude 'Windows/build/' \
   --exclude 'Windows/dist/' \
-  /Users/tommyclaw/OMI/HomeCopy/HomeCopy/ \
+  /Users/tommyclaw/OMI/Tools/HomeCopy/ \
   /Volumes/OMI-WinDev/AIAgent/HomeCopy/
 ```
 
