@@ -1,8 +1,0 @@
-server_id: "omi-worker-01"
-dropbox_root: "D:/Dropbox/OMI-Processing"
-work_dir: "D:/OMI/work"
-log_dir: "D:/OMI/logs"
-stable_after_minutes: 10
-auto_ready_after_hours: 0
-max_scan_files: 10000
-
