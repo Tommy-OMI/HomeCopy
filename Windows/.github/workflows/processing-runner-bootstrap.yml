@@ -1,0 +1,79 @@
+name: Processing Runner Bootstrap
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "server/processing-server/**"
+      - "deploy/windows/**"
+      - ".github/workflows/processing-runner-bootstrap.yml"
+
+jobs:
+  bootstrap:
+    name: Verify processing server on self-hosted Windows runner
+    runs-on: [self-hosted, Windows, X64]
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve system Python
+        run: |
+          where py >nul 2>nul
+          if %ERRORLEVEL% EQU 0 (
+            echo OMI_PYTHON_EXE=py>>%GITHUB_ENV%
+            echo OMI_PYTHON_ARGS=-3>>%GITHUB_ENV%
+            py -3 --version
+            exit /b 0
+          )
+          where python >nul 2>nul
+          if %ERRORLEVEL% EQU 0 (
+            echo OMI_PYTHON_EXE=python>>%GITHUB_ENV%
+            echo OMI_PYTHON_ARGS=>>%GITHUB_ENV%
+            python --version
+            exit /b 0
+          )
+          echo Python was not found. Install Python 3.11+ on the runner machine and make py or python available on PATH.
+          exit /b 1
+
+      - name: Install processing server CLI
+        run: |
+          if "%OMI_PYTHON_ARGS%"=="" (
+            %OMI_PYTHON_EXE% -m pip install --upgrade pip
+            %OMI_PYTHON_EXE% -m pip install -e server/processing-server
+          ) else (
+            %OMI_PYTHON_EXE% %OMI_PYTHON_ARGS% -m pip install --upgrade pip
+            %OMI_PYTHON_EXE% %OMI_PYTHON_ARGS% -m pip install -e server/processing-server
+          )
+
+      - name: Run unit tests
+        working-directory: server/processing-server
+        run: |
+          if "%OMI_PYTHON_ARGS%"=="" (
+            %OMI_PYTHON_EXE% -m unittest discover -s tests
+          ) else (
+            %OMI_PYTHON_EXE% %OMI_PYTHON_ARGS% -m unittest discover -s tests
+          )
+
+      - name: CLI health
+        run: |
+          omi-processing health --json
+
+      - name: Scan configured Dropbox root when available
+        run: |
+          if "%OMI_PROCESSING_CONFIG%"=="" (
+            set "CONFIG=D:\OMI\config\processing-server.yaml"
+          ) else (
+            set "CONFIG=%OMI_PROCESSING_CONFIG%"
+          )
+          if exist "%CONFIG%" (
+            omi-processing scan --config "%CONFIG%" --limit 200 --json
+            omi-processing process-once --config "%CONFIG%" --dry-run --json
+          ) else (
+            echo ::notice::Processing config not found at %CONFIG%. Skipping real Dropbox scan.
+          )

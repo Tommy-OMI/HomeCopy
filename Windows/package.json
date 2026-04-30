@@ -1,0 +1,29 @@
+{
+  "name": "omi-astera",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OMI Astera desktop control platform for astrophotography workflows.",
+  "main": "out/main/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "node scripts/dev.cjs",
+    "build": "tsc && electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.1.1",
+    "electron-vite": "^4.0.0",
+    "lucide-react": "^0.561.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.2",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "electron": "^39.2.7",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.7"
+  }
+}

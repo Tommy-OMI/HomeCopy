@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omi-processing-server"
+version = "0.1.0"
+description = "OMI Astera Python processing server CLI for Dropbox-synced FITS workflows."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+omi-processing = "omi_processing.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
