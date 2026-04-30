@@ -18,8 +18,11 @@ except Exception:  # pragma: no cover - optional runtime dependency behavior
 _KEY_NAME_MAP = {
     "Ctrl": "<ctrl>",
     "Alt": "<alt>",
+    "Option": "<alt>",
     "Shift": "<shift>",
     "Meta": "<cmd>",
+    "Cmd": "<cmd>",
+    "Command": "<cmd>",
     "Win": "<cmd>",
     "Space": "<space>",
     "Tab": "<tab>",

@@ -27,7 +27,7 @@ settings = get_settings()
 setup_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="HomeCopy Relay Server", version="0.1.0")
+app = FastAPI(title="HomeCopy Relay Server", version="0.9.0")
 manager = ConnectionManager()
 discovery_broadcaster = LanDiscoveryBroadcaster(settings)
 

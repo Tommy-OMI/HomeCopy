@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+from urllib.parse import urlsplit
+
+
+def normalize_device_label_key(value: str) -> str:
+    return "".join(char.lower() for char in value if char.isalnum())
 
 
 def normalize_device_id(value: str) -> str:
@@ -10,7 +15,7 @@ def normalize_device_id(value: str) -> str:
 
 
 def format_device_label(device_name: str, device_id: str) -> str:
-    if normalize_device_id(device_name) == normalize_device_id(device_id):
+    if normalize_device_label_key(device_name) == normalize_device_label_key(device_id):
         return device_name
     return f"{device_name}\n{device_id}"
 
@@ -26,3 +31,10 @@ def format_history_timestamp(value: str) -> str:
     except ValueError:
         return value.replace("T", " ").removesuffix("Z")
     return parsed.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def format_server_display(server_url: str) -> str:
+    parts = urlsplit(server_url)
+    if not parts.scheme or not parts.netloc:
+        return server_url
+    return parts.netloc

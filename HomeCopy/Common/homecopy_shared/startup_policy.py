@@ -50,6 +50,15 @@ class EmbeddedServerController:
     started_by_app: bool = False
     _closed: bool = False
 
+    def is_running(self) -> bool:
+        return self.process is not None and self.process.poll() is None
+
+    def start(self, root: Path) -> None:
+        controller = spawn_embedded_server(root)
+        self.process = controller.process
+        self.started_by_app = controller.started_by_app
+        self._closed = False
+
     def shutdown(self) -> None:
         if self._closed:
             return
@@ -95,6 +104,11 @@ def local_server_url() -> str:
     return f"ws://127.0.0.1:{settings.port}/ws"
 
 
+def local_server_display_address() -> str:
+    settings = get_settings()
+    return f"127.0.0.1:{settings.port}"
+
+
 def healthcheck_url() -> str:
     settings = get_settings()
     return f"http://127.0.0.1:{settings.port}/healthz"
@@ -104,6 +118,12 @@ def healthcheck_url_for_server(server_url: str) -> str:
     parts = urlsplit(server_url)
     scheme = "https" if parts.scheme == "wss" else "http"
     return urlunsplit((scheme, parts.netloc, "/healthz", "", ""))
+
+
+def is_local_server_url(server_url: str) -> bool:
+    parts = urlsplit(server_url)
+    hostname = (parts.hostname or "").lower()
+    return hostname in {"127.0.0.1", "localhost"}
 
 
 def check_server_health(url: str | None = None, timeout: float = 1.0) -> tuple[bool, str | None]:
