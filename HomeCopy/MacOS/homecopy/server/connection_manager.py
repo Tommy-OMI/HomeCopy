@@ -68,10 +68,12 @@ class ConnectionManager:
         if not self._connections:
             return
 
-        payload = DeviceListMessage(devices=self.get_device_list()).model_dump(by_alias=True, mode="json")
         stale_device_ids: list[str] = []
         for device_id, connection in self._connections.items():
             try:
+                payload = DeviceListMessage(
+                    devices=self.get_device_list(exclude_device_id=device_id)
+                ).model_dump(by_alias=True, mode="json")
                 await connection.websocket.send_json(payload)
             except Exception:
                 logger.exception("Failed to broadcast device list to device_id=%s", device_id)
