@@ -61,16 +61,22 @@ QMainWindow {
   background: #f4efe7;
 }
 QFrame#TopBar {
-  background: #183153;
-  border-radius: 18px;
-}
-QFrame#TopSection {
   background: transparent;
 }
+QFrame#TopSectionLeft,
 QFrame#TopSectionRight {
-  background: rgba(255, 255, 255, 0.06);
-  border-left: 1px solid rgba(255, 250, 242, 0.18);
-  border-radius: 14px;
+  background: #183153;
+  border: 1px solid rgba(255, 250, 242, 0.12);
+  border-radius: 18px;
+}
+QLabel#SectionTitle {
+  color: #fffaf2;
+  font-size: 18px;
+  font-weight: 700;
+}
+QLabel#SectionStatus {
+  color: #f5c451;
+  font-weight: 700;
 }
 QFrame#Panel {
   background: #fffaf2;
@@ -139,6 +145,17 @@ QPushButton:hover {
 QPushButton:disabled {
   background: #cdb9ab;
   color: #f6ede4;
+}
+QPushButton[smallAction="true"] {
+  background: #d96d3a;
+  border-radius: 11px;
+  font-size: 18px;
+  font-weight: 700;
+  max-width: 22px;
+  min-width: 22px;
+  max-height: 22px;
+  min-height: 22px;
+  padding: 0;
 }
 QStatusBar {
   background: #fffaf2;
@@ -211,9 +228,9 @@ class MainWindow(QMainWindow):
         layout.setSpacing(18)
 
         self.client_section = QFrame()
-        self.client_section.setObjectName("TopSection")
+        self.client_section.setObjectName("TopSectionLeft")
         client_layout = QVBoxLayout(self.client_section)
-        client_layout.setContentsMargins(0, 0, 0, 0)
+        client_layout.setContentsMargins(18, 16, 18, 16)
         client_layout.setSpacing(10)
 
         client_header_row = QHBoxLayout()
@@ -222,16 +239,10 @@ class MainWindow(QMainWindow):
         title.setObjectName("TitleLabel")
         version = QLabel(APP_VERSION)
         version.setObjectName("VersionLabel")
-        self.client_status_badge = QLabel("connecting")
-        self.client_status_badge.setObjectName("StatusBadge")
-        self.client_status_badge.setAlignment(Qt.AlignCenter)
-        self.client_status_badge.setMinimumWidth(140)
         self.connection_button = QPushButton("Disconnect")
         self.connection_button.setMinimumWidth(132)
         client_header_row.addWidget(title)
         client_header_row.addWidget(version)
-        client_header_row.addSpacing(4)
-        client_header_row.addWidget(self.client_status_badge)
         client_header_row.addStretch(1)
         client_header_row.addWidget(self.connection_button)
 
@@ -239,40 +250,41 @@ class MainWindow(QMainWindow):
         self.client_device_label.setObjectName("MetaLabel")
         self.client_server_label = QLabel()
         self.client_server_label.setObjectName("MetaLabel")
+        self.client_status_label = QLabel()
+        self.client_status_label.setObjectName("SectionStatus")
 
         client_layout.addLayout(client_header_row)
         client_layout.addWidget(self.client_device_label)
         client_layout.addWidget(self.client_server_label)
+        client_layout.addWidget(self.client_status_label)
 
         self.server_section = QFrame()
         self.server_section.setObjectName("TopSectionRight")
         server_layout = QVBoxLayout(self.server_section)
-        server_layout.setContentsMargins(16, 12, 16, 12)
+        server_layout.setContentsMargins(18, 16, 18, 16)
         server_layout.setSpacing(10)
 
         server_header_row = QHBoxLayout()
         server_header_row.setSpacing(10)
         server_title = QLabel("Local Relay")
-        server_title.setObjectName("TitleLabel")
-        self.server_status_badge = QLabel("running")
-        self.server_status_badge.setObjectName("ServerBadge")
-        self.server_status_badge.setAlignment(Qt.AlignCenter)
-        self.server_status_badge.setMinimumWidth(110)
+        server_title.setObjectName("SectionTitle")
         self.server_toggle_button = QPushButton("Stop Server")
         self.server_toggle_button.setMinimumWidth(136)
         server_header_row.addWidget(server_title)
-        server_header_row.addWidget(self.server_status_badge)
         server_header_row.addStretch(1)
         server_header_row.addWidget(self.server_toggle_button)
 
         self.server_meta_label = QLabel(local_server_display_address())
         self.server_meta_label.setObjectName("MetaLabel")
+        self.server_status_label = QLabel()
+        self.server_status_label.setObjectName("SectionStatus")
 
         server_layout.addLayout(server_header_row)
         server_layout.addWidget(self.server_meta_label)
+        server_layout.addWidget(self.server_status_label)
 
-        layout.addWidget(self.client_section, 3)
-        layout.addWidget(self.server_section, 2)
+        layout.addWidget(self.client_section, 1)
+        layout.addWidget(self.server_section, 1)
         return panel
 
     def _build_device_panel(self) -> QWidget:
@@ -287,8 +299,6 @@ class MainWindow(QMainWindow):
 
         title = QLabel("Online Devices")
         title.setStyleSheet("font-size: 18px; font-weight: 700; color: #183153;")
-        description = QLabel("Double-click a device to target it quickly.")
-        description.setStyleSheet("color: #6f655d;")
 
         self.device_list = QListWidget()
         self.device_list.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -299,7 +309,6 @@ class MainWindow(QMainWindow):
         self.selected_device_label.setStyleSheet("font-weight: 700; color: #183153;")
 
         layout.addWidget(title)
-        layout.addWidget(description)
         layout.addWidget(self.device_list, 1)
         layout.addWidget(self.selected_device_label)
         return panel
@@ -603,8 +612,9 @@ class MainWindow(QMainWindow):
             for column, item in enumerate(items):
                 self.history_table.setItem(row_index, column, item)
 
-            delete_button = QPushButton("Delete")
-            delete_button.setMinimumWidth(80)
+            delete_button = QPushButton("-")
+            delete_button.setProperty("smallAction", True)
+            delete_button.setToolTip("Delete")
             delete_button.clicked.connect(
                 lambda _checked=False, index=history_index: self._delete_history_record(index)
             )
@@ -641,7 +651,7 @@ class MainWindow(QMainWindow):
 
     def _handle_status_changed(self, status: str) -> None:
         badge_text = "reconnecting" if status.startswith("disconnected:") else status
-        self.client_status_badge.setText(badge_text)
+        self.client_status_label.setText(f"Status: {badge_text}")
         self.connection_button.setText("Connect" if status == "disconnected" else "Disconnect")
         self.statusBar().showMessage(status)
 
@@ -722,8 +732,10 @@ class MainWindow(QMainWindow):
             self._syncing_history_selection = False
 
     def _refresh_header_details(self) -> None:
-        self.client_device_label.setText(f"Client: {self.config.device_name}")
+        self.client_device_label.setText(f"Device: {self.config.device_name}")
         self.client_server_label.setText(f"Server: {format_server_display(self.config.server_url)}")
+        if not self.client_status_label.text():
+            self.client_status_label.setText("Status: connecting")
         self._refresh_server_section()
 
     def _refresh_server_section(self) -> None:
@@ -732,19 +744,19 @@ class MainWindow(QMainWindow):
         if not show_local_server:
             return
 
-        self.server_meta_label.setText(local_server_display_address())
+        self.server_meta_label.setText(f"Listen: {local_server_display_address()}")
         if self.server_controller.started_by_app:
             if self.server_controller.is_running():
-                self.server_status_badge.setText("running")
+                self.server_status_label.setText("Status: running")
                 self.server_toggle_button.setText("Stop Server")
             else:
-                self.server_status_badge.setText("stopped")
+                self.server_status_label.setText("Status: stopped")
                 self.server_toggle_button.setText("Restart Server")
             self.server_toggle_button.setEnabled(True)
             return
 
-        self.server_status_badge.setText("external")
-        self.server_toggle_button.setText("External Server")
+        self.server_status_label.setText("Status: external")
+        self.server_toggle_button.setText("Stop Server")
         self.server_toggle_button.setEnabled(False)
 
     def _should_show_server_section(self) -> bool:
