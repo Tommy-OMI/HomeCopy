@@ -122,6 +122,7 @@ class ClientRuntimeThread(QThread):
         if self.config.show_notification:
             self.notification_service.notify("HomeCopy", f"New text from {message.from_name}")
 
+        self.incoming_text.emit(message.model_dump(by_alias=True, mode="json"))
         self.history_service.append(
             HistoryRecord(
                 direction="received",
@@ -132,7 +133,6 @@ class ClientRuntimeThread(QThread):
             )
         )
         self._emit_history_snapshot()
-        self.incoming_text.emit(message.model_dump(by_alias=True, mode="json"))
 
     async def _handle_ack(self, message: SendAckMessage) -> None:
         self.ack_received.emit(f"{message.request_id}")

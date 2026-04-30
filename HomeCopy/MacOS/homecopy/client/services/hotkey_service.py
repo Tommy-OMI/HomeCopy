@@ -40,7 +40,6 @@ _KEY_NAME_MAP = {
     "Insert": "<insert>",
 }
 
-
 def qkeysequence_to_pynput(sequence_text: str) -> str:
     tokens = [token.strip() for token in sequence_text.split("+") if token.strip()]
     converted: list[str] = []
@@ -125,6 +124,12 @@ class GlobalHotkeyManager(QObject):
         self.windows_thread_id: int | None = None
         self.windows_stop_event = threading.Event()
         self.windows_ready_event = threading.Event()
+
+    def supports_global_hotkey(self) -> bool:
+        return True
+
+    def disabled_reason(self) -> str | None:
+        return None
 
     def set_hotkey(self, sequence_text: str, hwnd: int | None = None) -> bool:
         self.stop()

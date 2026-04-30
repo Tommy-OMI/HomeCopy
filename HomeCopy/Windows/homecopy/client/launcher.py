@@ -5,10 +5,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from homecopy.client.config import ClientConfig
-from homecopy_shared.startup_policy import prepare_client_launch
+from homecopy.client.ui.setup_dialog import SetupDialog
+from homecopy_shared.startup_policy import MissingServerResolution, local_server_url, prepare_client_launch
 from homecopy.paths import runtime_data_root
 from homecopy.client.ui.main_window import create_application
 
@@ -45,19 +46,22 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def confirm_local_server_start() -> bool:
-    message = (
-        "No HomeCopy server was found on the local network.\n\n"
-        "Start a local relay server on this machine and connect to it?"
+def resolve_missing_server_with_setup(
+    config_path: Path,
+    config: ClientConfig,
+) -> MissingServerResolution:
+    dialog = SetupDialog(
+        config,
+        config_path,
+        server_missing=True,
+        local_server_url=local_server_url(),
     )
-    result = QMessageBox.question(
-        None,
-        "HomeCopy",
-        message,
-        QMessageBox.Yes | QMessageBox.No,
-        QMessageBox.Yes,
+    if dialog.exec() != QDialog.Accepted:
+        return MissingServerResolution(action="cancel")
+    return MissingServerResolution(
+        action=dialog.result_payload.action,
+        server_url=dialog.result_payload.server_url,
     )
-    return result == QMessageBox.Yes
 
 
 def launch_gui(config_arg: str | None = None) -> None:
@@ -69,7 +73,7 @@ def launch_gui(config_arg: str | None = None) -> None:
         launch_context = prepare_client_launch(
             config_path,
             root,
-            confirm_start_server=confirm_local_server_start,
+            resolve_missing_server=resolve_missing_server_with_setup,
         )
     except RuntimeError as exc:
         QMessageBox.information(None, "HomeCopy", str(exc))

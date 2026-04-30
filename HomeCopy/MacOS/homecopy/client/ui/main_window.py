@@ -5,12 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent
+from PySide6.QtGui import QAction, QCloseEvent, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -23,6 +24,8 @@ from PySide6.QtWidgets import (
     QStatusBar,
     QStyle,
     QSystemTrayIcon,
+    QTableWidget,
+    QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -34,7 +37,15 @@ from homecopy.client.ui.hotkey_dialog import HotkeyDialog
 from homecopy.client.ui.runtime import ClientRuntimeThread
 from homecopy.client.ui.setup_dialog import SetupDialog
 from homecopy_shared.startup_policy import EmbeddedServerController
+from homecopy_shared.ui_formatting import (
+    format_device_label,
+    format_history_direction,
+    format_history_timestamp,
+)
 
+
+HISTORY_MESSAGE_COLUMN = 3
+HISTORY_HIGHLIGHT_COLOR = QColor("#f8e8a6")
 
 WINDOW_STYLESHEET = """
 QMainWindow {
@@ -64,13 +75,26 @@ QLabel#TitleLabel {
 QLabel#MetaLabel {
   color: #d9e3f0;
 }
-QListWidget, QTextEdit {
+QListWidget, QTableWidget, QTextEdit {
   background: #fffdf8;
+  color: #183153;
   border: 1px solid #dccfb9;
   border-radius: 12px;
   padding: 8px;
   selection-background-color: #183153;
   selection-color: #fffdf8;
+}
+QListWidget::item,
+QTableWidget::item {
+  color: #183153;
+}
+QHeaderView::section {
+  background: #efe4d2;
+  color: #183153;
+  border: none;
+  border-bottom: 1px solid #dccfb9;
+  padding: 8px 10px;
+  font-weight: 700;
 }
 QPushButton {
   background: #d96d3a;
@@ -109,6 +133,8 @@ class MainWindow(QMainWindow):
         self.hotkey_manager = GlobalHotkeyManager(self)
         self.server_controller = server_controller
         self.minimize_to_tray_notice_shown = False
+        self.highlighted_history_marker: tuple[str, str, str] | None = None
+        self._syncing_history_selection = False
 
         self.setWindowTitle(f"HomeCopy - {self.config.device_name}")
         self.resize(1120, 760)
@@ -136,8 +162,8 @@ class MainWindow(QMainWindow):
 
         content_layout = QHBoxLayout()
         content_layout.setSpacing(18)
-        content_layout.addWidget(self._build_device_panel(), 2)
-        content_layout.addWidget(self._build_editor_panel(), 6)
+        content_layout.addWidget(self._build_device_panel(), 1)
+        content_layout.addWidget(self._build_editor_panel(), 7)
         root_layout.addLayout(content_layout)
 
         self.setCentralWidget(root)
@@ -174,6 +200,9 @@ class MainWindow(QMainWindow):
     def _build_device_panel(self) -> QWidget:
         panel = QFrame()
         panel.setObjectName("Panel")
+        panel.setMinimumWidth(180)
+        panel.setMaximumWidth(240)
+
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
@@ -185,8 +214,8 @@ class MainWindow(QMainWindow):
 
         self.device_list = QListWidget()
         self.device_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.device_list.setMinimumWidth(220)
-        self.device_list.setMaximumWidth(300)
+        self.device_list.setMinimumWidth(150)
+        self.device_list.setMaximumWidth(210)
 
         self.selected_device_label = QLabel("Target: none")
         self.selected_device_label.setStyleSheet("font-weight: 700; color: #183153;")
@@ -213,41 +242,58 @@ class MainWindow(QMainWindow):
         self.editor = QTextEdit()
         self.editor.setPlaceholderText("Type or paste text here...")
         self.editor.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.editor.setMinimumHeight(150)
+        self.editor.setMaximumHeight(220)
+        self.editor.installEventFilter(self)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(10)
         self.send_button = QPushButton("Send")
         self.clear_button = QPushButton("Clear")
-        self.refresh_button = QPushButton("Refresh")
         self.hotkey_button = QPushButton("Hotkey")
         button_row.addWidget(self.send_button)
         button_row.addWidget(self.clear_button)
-        button_row.addWidget(self.refresh_button)
         button_row.addWidget(self.hotkey_button)
         button_row.addStretch(1)
 
         history_title = QLabel("Recent History")
         history_title.setStyleSheet("font-size: 18px; font-weight: 700; color: #183153;")
-        self.history_list = QListWidget()
+
+        self.history_table = QTableWidget(0, 4)
+        self.history_table.setHorizontalHeaderLabels(["Date Time", "Device", "Direction", "Message"])
+        self.history_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.history_table.setSelectionBehavior(QAbstractItemView.SelectItems)
+        self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.history_table.setWordWrap(False)
+        self.history_table.setShowGrid(False)
+        self.history_table.verticalHeader().setVisible(False)
+        self.history_table.verticalHeader().setDefaultSectionSize(34)
+
+        header = self.history_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
 
         layout.addWidget(title)
         layout.addWidget(description)
-        layout.addWidget(self.editor, 4)
+        layout.addWidget(self.editor, 2)
         layout.addLayout(button_row)
         layout.addWidget(history_title)
-        layout.addWidget(self.history_list, 3)
+        layout.addWidget(self.history_table, 5)
         return panel
 
     def _connect_signals(self) -> None:
         self.send_button.clicked.connect(self._send_current_text)
         self.clear_button.clicked.connect(self.editor.clear)
-        self.refresh_button.clicked.connect(self._refresh_devices)
         self.hotkey_button.clicked.connect(self._open_hotkey_dialog)
         self.device_list.itemSelectionChanged.connect(self._update_selected_device_label)
         self.device_list.itemDoubleClicked.connect(lambda _: self._send_current_text())
+        self.history_table.cellPressed.connect(self._handle_history_cell_pressed)
+        self.history_table.itemSelectionChanged.connect(self._normalize_history_selection)
         self.hotkey_manager.activated.connect(self._toggle_visibility_from_hotkey)
         self.hotkey_manager.registration_failed.connect(self._handle_hotkey_registration_failed)
-    
+
     def _connect_runtime_signals(self) -> None:
         assert self.runtime is not None
         self.runtime.status_changed.connect(self._handle_status_changed)
@@ -271,10 +317,6 @@ class MainWindow(QMainWindow):
             subtitle.setText(f"{self.config.device_name}  |  {self.config.server_url}")
         self.setWindowTitle(f"HomeCopy - {self.config.device_name}")
         return True
-
-    def _refresh_devices(self) -> None:
-        if self.runtime is not None:
-            self.runtime.refresh_devices()
 
     def _setup_tray_icon(self) -> None:
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -301,7 +343,10 @@ class MainWindow(QMainWindow):
         self.tray_icon = tray_icon
 
     def _setup_global_hotkey(self) -> None:
-        self.hotkey_manager.set_hotkey(self.config.global_hotkey)
+        if not self.hotkey_manager.set_hotkey(self.config.global_hotkey):
+            reason = self.hotkey_manager.disabled_reason()
+            if reason:
+                self.statusBar().showMessage(reason, 8000)
 
     def _open_hotkey_dialog(self) -> None:
         dialog = HotkeyDialog(self.config.global_hotkey, self)
@@ -340,9 +385,12 @@ class MainWindow(QMainWindow):
         self.hide()
         self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
         if not self.minimize_to_tray_notice_shown:
+            tray_message = "HomeCopy is still running in the system tray."
+            if self.config.global_hotkey:
+                tray_message = f"{tray_message} Hotkey: {self.config.global_hotkey}"
             self.tray_icon.showMessage(
                 "HomeCopy",
-                f"HomeCopy is still running in the system tray. Hotkey: {self.config.global_hotkey}",
+                tray_message,
                 QSystemTrayIcon.Information,
                 4000,
             )
@@ -354,8 +402,6 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def _toggle_visibility_from_hotkey(self) -> None:
-        # Global hotkey callbacks can arrive with stale window-state flags.
-        # Use visibility as the source of truth and defer UI work to the event loop.
         if self.isVisible():
             QTimer.singleShot(0, self._hide_to_tray)
             return
@@ -369,14 +415,24 @@ class MainWindow(QMainWindow):
             self.server_controller.shutdown()
 
     def _populate_devices(self, devices: list[dict]) -> None:
-        self.current_devices = [
-            device for device in devices if device["device_id"] != self.config.device_id
-        ]
+        visible_devices: list[dict] = []
+        seen_device_ids: set[str] = set()
+        local_device_id = self.config.device_id.casefold()
+        for device in devices:
+            device_id = str(device["device_id"]).casefold()
+            if device_id == local_device_id or device_id in seen_device_ids:
+                continue
+            seen_device_ids.add(device_id)
+            visible_devices.append(device)
+
+        self.current_devices = visible_devices
         selected_device_id = self._selected_device_id()
 
         self.device_list.clear()
         for device in self.current_devices:
-            item = QListWidgetItem(f"{device['device_name']}\n{device['device_id']}")
+            device_name = str(device["device_name"])
+            device_id = str(device["device_id"])
+            item = QListWidgetItem(format_device_label(device_name, device_id))
             item.setData(Qt.UserRole, device["device_id"])
             self.device_list.addItem(item)
             if device["device_id"] == selected_device_id:
@@ -386,23 +442,63 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Online devices updated: {len(self.current_devices)}")
 
     def _populate_history(self, history: list[dict]) -> None:
-        self.history_list.clear()
-        for record in reversed(history):
-            direction = "Sent" if record["direction"] == "sent" else "Received"
-            line = f"{direction} | {record['peer_device_name']} | {record['created_at']}"
-            preview = record["text"].replace("\n", " ")
-            item = QListWidgetItem(f"{line}\n{preview[:140]}")
-            self.history_list.addItem(item)
+        self.history_table.setRowCount(0)
+        highlighted_row: int | None = None
+
+        for row_index, record in enumerate(reversed(history)):
+            self.history_table.insertRow(row_index)
+
+            device_name = str(record["peer_device_name"])
+            message_text = str(record["text"])
+            direction = str(record["direction"])
+
+            items = [
+                self._build_history_item(format_history_timestamp(str(record["created_at"]))),
+                self._build_history_item(device_name),
+                self._build_history_item(format_history_direction(direction)),
+                self._build_history_item(message_text, selectable=True),
+            ]
+
+            for column, item in enumerate(items):
+                self.history_table.setItem(row_index, column, item)
+
+            if (
+                highlighted_row is None
+                and self.highlighted_history_marker is not None
+                and direction == "received"
+                and (
+                    str(record["peer_device_id"]),
+                    device_name,
+                    message_text,
+                )
+                == self.highlighted_history_marker
+            ):
+                highlighted_row = row_index
+                for item in items:
+                    item.setBackground(HISTORY_HIGHLIGHT_COLOR)
+
+        if highlighted_row is not None:
+            self._select_history_message_cell(highlighted_row, scroll=True)
+
+    def _build_history_item(self, text: str, *, selectable: bool = False) -> QTableWidgetItem:
+        item = QTableWidgetItem(text)
+        flags = Qt.ItemIsEnabled
+        if selectable:
+            flags |= Qt.ItemIsSelectable
+        item.setFlags(flags)
+        item.setToolTip(text)
+        return item
 
     def _handle_status_changed(self, status: str) -> None:
         self.status_badge.setText(status)
         self.statusBar().showMessage(status)
 
     def _handle_incoming_text(self, message: dict) -> None:
-        sender = message.get("from_name") or message.get("from")
-        self.statusBar().showMessage(f"Received text from {sender}", 8000)
-        self.editor.setPlainText(message.get("text", ""))
-        self.editor.selectAll()
+        sender_name = str(message.get("from_name") or message.get("from") or "Unknown device")
+        sender_id = str(message.get("from") or "")
+        text = str(message.get("text") or "")
+        self.highlighted_history_marker = (sender_id, sender_name, text)
+        self.statusBar().showMessage(f"Received text from {sender_name}", 8000)
 
     def _handle_ack(self, request_id: str) -> None:
         self.editor.clear()
@@ -438,8 +534,49 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "HomeCopy", "Please enter some text before sending.")
             return
 
+        assert self.runtime is not None
         self.runtime.send_text(target_device_id, text)
         self.statusBar().showMessage(f"Sending to {target_device_id}...", 4000)
+
+    def _handle_history_cell_pressed(self, row: int, _column: int) -> None:
+        self._select_history_message_cell(row)
+
+    def _normalize_history_selection(self) -> None:
+        if self._syncing_history_selection:
+            return
+        selected_indexes = self.history_table.selectedIndexes()
+        if not selected_indexes:
+            return
+        first_index = selected_indexes[0]
+        if first_index.column() == HISTORY_MESSAGE_COLUMN and len(selected_indexes) == 1:
+            return
+        self._select_history_message_cell(first_index.row())
+
+    def _select_history_message_cell(self, row: int, *, scroll: bool = False) -> None:
+        item = self.history_table.item(row, HISTORY_MESSAGE_COLUMN)
+        if item is None:
+            return
+
+        self._syncing_history_selection = True
+        try:
+            self.history_table.clearSelection()
+            item.setSelected(True)
+            self.history_table.setCurrentItem(item)
+            if scroll:
+                self.history_table.scrollToItem(item, QAbstractItemView.PositionAtTop)
+        finally:
+            self._syncing_history_selection = False
+
+    def eventFilter(self, watched: object, event: QEvent) -> bool:
+        if watched is self.editor and event.type() == QEvent.KeyPress:
+            modifiers = event.modifiers()
+            if modifiers & Qt.ControlModifier and event.key() in {Qt.Key_Return, Qt.Key_Enter}:
+                self._send_current_text()
+                return True
+            if modifiers & Qt.ControlModifier and event.key() == Qt.Key_K:
+                self.editor.clear()
+                return True
+        return super().eventFilter(watched, event)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.hotkey_manager.stop()
@@ -460,7 +597,6 @@ class MainWindow(QMainWindow):
         ):
             QTimer.singleShot(0, self._hide_to_tray)
         super().changeEvent(event)
-
 
 
 def create_application(

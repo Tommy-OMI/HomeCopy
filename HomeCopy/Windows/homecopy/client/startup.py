@@ -13,11 +13,15 @@ from homecopy_shared.startup_policy import (
 
 
 def resolve_runtime_server_url(
+    config_path: Path,
     root: Path,
     confirm_start_server: ConfirmStartServer | None = None,
 ) -> str:
+    config = ClientConfig.load(config_path)
     server_url, _ = resolve_runtime_server(
+        config_path,
         root,
+        config,
         confirm_start_server=confirm_start_server,
     )
     return server_url

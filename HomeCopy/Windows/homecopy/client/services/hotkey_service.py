@@ -126,6 +126,12 @@ class GlobalHotkeyManager(QObject):
         self.windows_stop_event = threading.Event()
         self.windows_ready_event = threading.Event()
 
+    def supports_global_hotkey(self) -> bool:
+        return True
+
+    def disabled_reason(self) -> str | None:
+        return None
+
     def set_hotkey(self, sequence_text: str, hwnd: int | None = None) -> bool:
         self.stop()
         if not sequence_text:
