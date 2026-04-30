@@ -20,7 +20,6 @@ homecopy/
 scripts/
 requirements.txt
 .env.example
-client_config.example.json
 install_all.bat
 start_server.bat
 start_client.bat
