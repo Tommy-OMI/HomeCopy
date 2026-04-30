@@ -184,6 +184,10 @@ class MainWindow(QMainWindow):
         self.highlighted_history_marker: tuple[str, str, str] | None = None
         self._syncing_history_selection = False
         self.local_server_client_count = 0
+        self._quit_requested = False
+        self._hidden_to_tray = False
+        self._restoring_from_tray = False
+        self._tray_hide_pending = False
         self.server_stats_timer = QTimer(self)
         self.server_stats_timer.setInterval(1500)
 
@@ -487,10 +491,12 @@ class MainWindow(QMainWindow):
             self._restore_from_tray()
 
     def _hide_to_tray(self) -> None:
+        self._tray_hide_pending = False
         if not self.config.minimize_to_tray or self.tray_icon is None:
             return
-        self.hide()
+        self._hidden_to_tray = True
         self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+        self.hide()
         if not self.minimize_to_tray_notice_shown:
             tray_message = "HomeCopy is still running in the system tray."
             if self.config.global_hotkey:
@@ -504,9 +510,18 @@ class MainWindow(QMainWindow):
             self.minimize_to_tray_notice_shown = True
 
     def _restore_from_tray(self) -> None:
+        self._tray_hide_pending = False
+        self._hidden_to_tray = False
+        self._restoring_from_tray = True
         self.showNormal()
         self.raise_()
         self.activateWindow()
+        self.repaint()
+        QTimer.singleShot(0, self._finish_restore_from_tray)
+
+    def _finish_restore_from_tray(self) -> None:
+        self._restoring_from_tray = False
+        self.update()
 
     def _toggle_visibility_from_hotkey(self) -> None:
         if self.isVisible():
@@ -515,6 +530,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._restore_from_tray)
 
     def _quit_application(self) -> None:
+        self._quit_requested = True
         self.close()
 
     def _shutdown_owned_server(self) -> None:
@@ -809,6 +825,15 @@ class MainWindow(QMainWindow):
     def _is_local_client_target(self) -> bool:
         return is_local_server_url(self.config.server_url)
 
+    def event(self, event: QEvent) -> bool:
+        if (
+            event.type() == QEvent.Show
+            and self._hidden_to_tray
+            and not self._restoring_from_tray
+        ):
+            QTimer.singleShot(0, self._restore_from_tray)
+        return super().event(event)
+
     def eventFilter(self, watched: object, event: QEvent) -> bool:
         if watched is self.editor and event.type() == QEvent.KeyPress:
             modifiers = event.modifiers()
@@ -821,6 +846,14 @@ class MainWindow(QMainWindow):
         return super().eventFilter(watched, event)
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if (
+            not self._quit_requested
+            and self.config.minimize_to_tray
+            and self.tray_icon is not None
+        ):
+            event.ignore()
+            QTimer.singleShot(0, self._hide_to_tray)
+            return
         self.hotkey_manager.stop()
         if self.tray_icon is not None:
             self.tray_icon.hide()
@@ -836,7 +869,10 @@ class MainWindow(QMainWindow):
             and self.isMinimized()
             and self.config.minimize_to_tray
             and self.tray_icon is not None
+            and not self._tray_hide_pending
+            and not self._restoring_from_tray
         ):
+            self._tray_hide_pending = True
             QTimer.singleShot(0, self._hide_to_tray)
         super().changeEvent(event)
 
