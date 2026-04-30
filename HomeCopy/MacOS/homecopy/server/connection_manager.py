@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from fastapi import WebSocket
 
-from homecopy.shared.models import DeviceListMessage, DeviceSummary
+from homecopy.shared.models import DeviceListMessage, DeviceSummary, normalize_device_id
 
 logger = logging.getLogger(__name__)
 
@@ -30,19 +30,21 @@ class ConnectionManager:
         return len(self._connections)
 
     def is_online(self, device_id: str) -> bool:
-        return device_id in self._connections
+        return normalize_device_id(device_id) in self._connections
 
     def get(self, device_id: str) -> DeviceConnection | None:
-        return self._connections.get(device_id)
+        return self._connections.get(normalize_device_id(device_id))
 
     def get_device_list(self, exclude_device_id: str | None = None) -> list[DeviceSummary]:
+        excluded = normalize_device_id(exclude_device_id) if exclude_device_id else None
         return [
             DeviceSummary(device_id=conn.device_id, device_name=conn.device_name)
             for conn in sorted(self._connections.values(), key=lambda item: item.device_name.lower())
-            if conn.device_id != exclude_device_id
+            if conn.device_id != excluded
         ]
 
     async def register(self, websocket: WebSocket, device_id: str, device_name: str, remote_addr: str) -> None:
+        device_id = normalize_device_id(device_id)
         existing = self._connections.get(device_id)
         if existing is not None:
             logger.info("Replacing previous connection for device_id=%s", device_id)
@@ -71,12 +73,10 @@ class ConnectionManager:
         if not self._connections:
             return
 
+        payload = DeviceListMessage(devices=self.get_device_list()).model_dump(by_alias=True, mode="json")
         stale_device_ids: list[str] = []
         for device_id, connection in self._connections.items():
             try:
-                payload = DeviceListMessage(
-                    devices=self.get_device_list(exclude_device_id=device_id)
-                ).model_dump(by_alias=True, mode="json")
                 await connection.websocket.send_json(payload)
             except Exception:
                 logger.exception("Failed to broadcast device list to device_id=%s", device_id)

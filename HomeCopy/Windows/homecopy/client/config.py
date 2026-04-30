@@ -13,6 +13,8 @@ from homecopy.shared.models import normalize_device_id
 
 
 PLACEHOLDER_AUTH_TOKEN = "replace-with-a-long-random-secret"
+DEFAULT_GLOBAL_HOTKEY = "Ctrl+Alt+K"
+LEGACY_WINDOWS_HOTKEYS = {"Ctrl+Alt+H"}
 
 
 def make_device_id(device_name: str) -> str:
@@ -28,7 +30,7 @@ class ClientConfig(BaseModel):
     server_url: str = Field(min_length=1)
     auth_token: str = ""
     minimize_to_tray: bool = True
-    global_hotkey: str = "Ctrl+Alt+H"
+    global_hotkey: str = DEFAULT_GLOBAL_HOTKEY
     auto_start_server_if_missing: bool = True
     auto_copy_on_receive: bool = True
     show_notification: bool = True
@@ -45,6 +47,8 @@ class ClientConfig(BaseModel):
     def load(cls, path: str | Path) -> "ClientConfig":
         config_path = Path(path)
         data = json.loads(config_path.read_text(encoding="utf-8"))
+        if data.get("global_hotkey") in LEGACY_WINDOWS_HOTKEYS:
+            data["global_hotkey"] = DEFAULT_GLOBAL_HOTKEY
         base_dir = config_path.parent
         if "history_path" in data:
             data["history_path"] = base_dir / data["history_path"]

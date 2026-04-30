@@ -11,9 +11,18 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from .constants import PROTOCOL_VERSION
 
 
+def normalize_device_id(value: str) -> str:
+    return value.strip().lower()
+
+
 class DeviceSummary(BaseModel):
     device_id: str = Field(pattern=r"^[A-Za-z0-9-]+$")
     device_name: str
+
+    @field_validator("device_id")
+    @classmethod
+    def normalize_device_id_field(cls, value: str) -> str:
+        return normalize_device_id(value)
 
 
 class RegisterMessage(BaseModel):
@@ -22,6 +31,11 @@ class RegisterMessage(BaseModel):
     device_id: str = Field(pattern=r"^[A-Za-z0-9-]+$")
     device_name: str = Field(min_length=1, max_length=100)
     token: str = ""
+
+    @field_validator("device_id")
+    @classmethod
+    def normalize_device_id_field(cls, value: str) -> str:
+        return normalize_device_id(value)
 
 
 class RegisterOkMessage(BaseModel):
@@ -35,6 +49,11 @@ class SendTextMessage(BaseModel):
     request_id: UUID
     to: str = Field(pattern=r"^[A-Za-z0-9-]+$")
     text: str = Field(min_length=1)
+
+    @field_validator("to")
+    @classmethod
+    def normalize_target_device_id(cls, value: str) -> str:
+        return normalize_device_id(value)
 
 
 class IncomingTextMessage(BaseModel):
@@ -78,6 +97,11 @@ class HistoryRecord(BaseModel):
         if not value.strip():
             raise ValueError("Text cannot be empty.")
         return value
+
+    @field_validator("peer_device_id")
+    @classmethod
+    def normalize_peer_device_id(cls, value: str) -> str:
+        return normalize_device_id(value)
 
 
 ClientInboundMessage = Union[RegisterMessage, SendTextMessage]

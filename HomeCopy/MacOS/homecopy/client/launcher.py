@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from homecopy.client.config import ClientConfig
+from homecopy.client.ui.main_window import create_application
 from homecopy.client.ui.setup_dialog import SetupDialog
 from homecopy_shared.startup_policy import MissingServerResolution, local_server_url, prepare_client_launch
 from homecopy.paths import runtime_data_root
@@ -37,6 +39,13 @@ def resolve_config_path(config_arg: str | None) -> Path:
     return ensure_bootstrap_config(root)
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="HomeCopy desktop client")
+    parser.add_argument("--config", default=None, help="Optional path to a client config.json")
+    parser.add_argument("--server-mode", action="store_true", help="Run the embedded relay server only")
+    return parser.parse_args()
+
+
 def resolve_missing_server_with_setup(
     config_path: Path,
     config: ClientConfig,
@@ -56,8 +65,6 @@ def resolve_missing_server_with_setup(
 
 
 def launch_gui(config_arg: str | None = None) -> None:
-    from homecopy.client.ui.main_window import create_application
-
     app = QApplication.instance() or QApplication([])
     app.setQuitOnLastWindowClosed(False)
     root = runtime_data_root()

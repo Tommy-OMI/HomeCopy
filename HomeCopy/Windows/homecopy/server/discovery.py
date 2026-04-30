@@ -11,6 +11,7 @@ from homecopy.server.config import ServerSettings
 from homecopy.shared.discovery import (
     DiscoveryAnnouncement,
     DiscoveryProbe,
+    discovery_broadcast_targets,
     decode_discovery_message,
     encode_discovery_message,
 )
@@ -115,7 +116,8 @@ class LanDiscoveryBroadcaster:
 
     async def _broadcast_loop(self) -> None:
         while True:
-            self.send_announcement(("255.255.255.255", self.settings.discovery_port))
+            for target in discovery_broadcast_targets():
+                self.send_announcement((target, self.settings.discovery_port))
             await asyncio.sleep(self.settings.discovery_interval)
 
     def send_announcement(self, target: tuple[str, int]) -> None:

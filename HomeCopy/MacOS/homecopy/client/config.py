@@ -6,9 +6,10 @@ import json
 import socket
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from homecopy.shared.constants import DEFAULT_HISTORY_LIMIT
+from homecopy.shared.models import normalize_device_id
 
 
 PLACEHOLDER_AUTH_TOKEN = "replace-with-a-long-random-secret"
@@ -36,6 +37,11 @@ class ClientConfig(BaseModel):
     history_limit: int = Field(default=DEFAULT_HISTORY_LIMIT, ge=1, le=1000)
     history_path: Path = Path("client_history.json")
     setup_completed: bool = False
+
+    @field_validator("device_id")
+    @classmethod
+    def normalize_config_device_id(cls, value: str) -> str:
+        return normalize_device_id(value)
 
     @classmethod
     def load(cls, path: str | Path) -> "ClientConfig":
