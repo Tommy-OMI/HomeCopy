@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtWidgets import QApplication, QMessageBox
+
 from homecopy.client.config import ClientConfig
+from homecopy_shared.startup_policy import prepare_client_launch
 from homecopy.paths import runtime_data_root
-from homecopy.client.startup import prepare_client_config
 
 
 def ensure_bootstrap_config(root: Path) -> Path:
@@ -34,12 +36,47 @@ def resolve_config_path(config_arg: str | None) -> Path:
     return ensure_bootstrap_config(root)
 
 
+def confirm_local_server_start() -> bool:
+    message = (
+        "No HomeCopy server was found on the local network.\n\n"
+        "Start a local relay server on this machine and connect to it?"
+    )
+    result = QMessageBox.question(
+        None,
+        "HomeCopy",
+        message,
+        QMessageBox.Yes | QMessageBox.No,
+        QMessageBox.Yes,
+    )
+    return result == QMessageBox.Yes
+
+
 def launch_gui(config_arg: str | None = None) -> None:
     from homecopy.client.ui.main_window import create_application
 
+    app = QApplication.instance() or QApplication([])
     root = runtime_data_root()
     config_path = resolve_config_path(config_arg)
-    prepare_client_config(config_path, root)
-    app, window = create_application(config_path)
-    window.show()
-    app.exec()
+
+    try:
+        launch_context = prepare_client_launch(
+            config_path,
+            root,
+            confirm_start_server=confirm_local_server_start,
+        )
+    except RuntimeError as exc:
+        QMessageBox.information(None, "HomeCopy", str(exc))
+        return
+
+    app.aboutToQuit.connect(launch_context.server_controller.shutdown)
+
+    try:
+        app, window = create_application(
+            launch_context.config_path,
+            launch_context.config,
+            launch_context.server_controller,
+        )
+        window.show()
+        app.exec()
+    finally:
+        launch_context.server_controller.shutdown()

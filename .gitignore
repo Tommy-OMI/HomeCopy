@@ -1,5 +1,13 @@
+.venv/
 .venv-packaging/
+__pycache__/
+*.py[cod]
 build/
 dist/
 *.spec
 .DS_Store
+logs/
+.env
+client_history.json
+configs/clients/*.json
+!configs/clients/.gitkeep

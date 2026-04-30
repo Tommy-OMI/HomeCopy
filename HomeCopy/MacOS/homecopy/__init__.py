@@ -1,1 +1,0 @@
-"""HomeCopy package."""

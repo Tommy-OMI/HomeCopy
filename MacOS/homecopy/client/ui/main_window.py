@@ -33,7 +33,7 @@ from homecopy.client.services.hotkey_service import GlobalHotkeyManager
 from homecopy.client.ui.hotkey_dialog import HotkeyDialog
 from homecopy.client.ui.runtime import ClientRuntimeThread
 from homecopy.client.ui.setup_dialog import SetupDialog
-from homecopy.shared.models import normalize_device_id
+from homecopy_shared.startup_policy import EmbeddedServerController
 
 
 WINDOW_STYLESHEET = """
@@ -94,16 +94,21 @@ QStatusBar {
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, config_path: str | Path) -> None:
+    def __init__(
+        self,
+        config_path: str | Path,
+        config: ClientConfig | None = None,
+        server_controller: EmbeddedServerController | None = None,
+    ) -> None:
         super().__init__()
         self.config_path = Path(config_path)
-        self.config = ClientConfig.load(self.config_path)
+        self.config = config or ClientConfig.load(self.config_path)
         self.runtime: ClientRuntimeThread | None = None
         self.current_devices: list[dict] = []
         self.tray_icon: QSystemTrayIcon | None = None
         self.hotkey_manager = GlobalHotkeyManager(self)
+        self.server_controller = server_controller
         self.minimize_to_tray_notice_shown = False
-        self.latest_received_text = ""
 
         self.setWindowTitle(f"HomeCopy - {self.config.device_name}")
         self.resize(1120, 760)
@@ -208,8 +213,6 @@ class MainWindow(QMainWindow):
         self.editor = QTextEdit()
         self.editor.setPlaceholderText("Type or paste text here...")
         self.editor.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.editor.setMinimumHeight(150)
-        self.editor.setMaximumHeight(220)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(10)
@@ -223,48 +226,16 @@ class MainWindow(QMainWindow):
         button_row.addWidget(self.hotkey_button)
         button_row.addStretch(1)
 
-        layout.addWidget(title)
-        layout.addWidget(description)
-        layout.addWidget(self.editor, 2)
-        layout.addLayout(button_row)
-        layout.addWidget(self._build_activity_panel(), 5)
-        return panel
-
-    def _build_activity_panel(self) -> QWidget:
-        panel = QWidget()
-        layout = QHBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
-
-        history_panel = QFrame()
-        history_panel.setObjectName("Panel")
-        history_layout = QVBoxLayout(history_panel)
-        history_layout.setContentsMargins(16, 16, 16, 16)
-        history_layout.setSpacing(10)
         history_title = QLabel("Recent History")
         history_title.setStyleSheet("font-size: 18px; font-weight: 700; color: #183153;")
         self.history_list = QListWidget()
-        history_layout.addWidget(history_title)
-        history_layout.addWidget(self.history_list, 1)
 
-        incoming_panel = QFrame()
-        incoming_panel.setObjectName("Panel")
-        incoming_layout = QVBoxLayout(incoming_panel)
-        incoming_layout.setContentsMargins(16, 16, 16, 16)
-        incoming_layout.setSpacing(10)
-        incoming_title = QLabel("Latest Clipboard Sync")
-        incoming_title.setStyleSheet("font-size: 18px; font-weight: 700; color: #183153;")
-        self.latest_received_meta = QLabel("Waiting for incoming text...")
-        self.latest_received_meta.setStyleSheet("color: #6f655d;")
-        self.latest_received_preview = QTextEdit()
-        self.latest_received_preview.setReadOnly(True)
-        self.latest_received_preview.setPlaceholderText("New incoming text will appear here.")
-        incoming_layout.addWidget(incoming_title)
-        incoming_layout.addWidget(self.latest_received_meta)
-        incoming_layout.addWidget(self.latest_received_preview, 1)
-
-        layout.addWidget(history_panel, 1)
-        layout.addWidget(incoming_panel, 1)
+        layout.addWidget(title)
+        layout.addWidget(description)
+        layout.addWidget(self.editor, 4)
+        layout.addLayout(button_row)
+        layout.addWidget(history_title)
+        layout.addWidget(self.history_list, 3)
         return panel
 
     def _connect_signals(self) -> None:
@@ -393,29 +364,19 @@ class MainWindow(QMainWindow):
     def _quit_application(self) -> None:
         self.close()
 
-    def _populate_devices(self, devices: list[dict]) -> None:
-        visible_devices: list[dict] = []
-        seen_device_ids: set[str] = set()
-        local_device_id = self.config.device_id.casefold()
-        for device in devices:
-            device_id = str(device["device_id"]).casefold()
-            if device_id == local_device_id or device_id in seen_device_ids:
-                continue
-            seen_device_ids.add(device_id)
-            visible_devices.append(device)
+    def _shutdown_owned_server(self) -> None:
+        if self.server_controller is not None:
+            self.server_controller.shutdown()
 
-        self.current_devices = visible_devices
+    def _populate_devices(self, devices: list[dict]) -> None:
+        self.current_devices = [
+            device for device in devices if device["device_id"] != self.config.device_id
+        ]
         selected_device_id = self._selected_device_id()
 
         self.device_list.clear()
         for device in self.current_devices:
-            device_name = str(device["device_name"])
-            device_id = str(device["device_id"])
-            if normalize_device_id(device_name) == normalize_device_id(device_id):
-                item_text = device_name
-            else:
-                item_text = f"{device_name}\n{device_id}"
-            item = QListWidgetItem(item_text)
+            item = QListWidgetItem(f"{device['device_name']}\n{device['device_id']}")
             item.setData(Qt.UserRole, device["device_id"])
             self.device_list.addItem(item)
             if device["device_id"] == selected_device_id:
@@ -439,13 +400,9 @@ class MainWindow(QMainWindow):
 
     def _handle_incoming_text(self, message: dict) -> None:
         sender = message.get("from_name") or message.get("from")
-        text = message.get("text", "")
-        self.latest_received_text = text
         self.statusBar().showMessage(f"Received text from {sender}", 8000)
-        self.editor.setPlainText(text)
+        self.editor.setPlainText(message.get("text", ""))
         self.editor.selectAll()
-        self.latest_received_meta.setText(f"Latest incoming text from {sender}")
-        self.latest_received_preview.setPlainText(text)
 
     def _handle_ack(self, request_id: str) -> None:
         self.editor.clear()
@@ -491,6 +448,7 @@ class MainWindow(QMainWindow):
         if self.runtime is not None:
             self.runtime.stop()
             self.runtime.wait(3000)
+        self._shutdown_owned_server()
         super().closeEvent(event)
 
     def changeEvent(self, event: QEvent) -> None:
@@ -505,7 +463,11 @@ class MainWindow(QMainWindow):
 
 
 
-def create_application(config_path: str | Path) -> tuple[QApplication, MainWindow]:
+def create_application(
+    config_path: str | Path,
+    config: ClientConfig | None = None,
+    server_controller: EmbeddedServerController | None = None,
+) -> tuple[QApplication, MainWindow]:
     app = QApplication.instance() or QApplication([])
-    window = MainWindow(config_path)
+    window = MainWindow(config_path, config, server_controller)
     return app, window

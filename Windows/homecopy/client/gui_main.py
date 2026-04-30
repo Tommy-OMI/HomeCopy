@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from homecopy.client.ui.main_window import create_application
+from homecopy.client.launcher import launch_gui
 
 
 def parse_args() -> argparse.Namespace:
@@ -15,9 +15,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    app, window = create_application(args.config)
-    window.show()
-    app.exec()
+    launch_gui(args.config)
 
 
 if __name__ == "__main__":

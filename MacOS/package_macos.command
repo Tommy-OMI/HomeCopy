@@ -21,8 +21,10 @@ python -m PyInstaller \
   --windowed \
   --name HomeCopyClient \
   --paths "$(pwd)" \
+  --paths "$(pwd)/../Common" \
   --collect-all pynput \
   --collect-submodules homecopy \
+  --collect-submodules homecopy_shared \
   homecopy/client/launcher_main.py
 
 PACKAGE_DIR="dist/HomeCopyClient-macOS"

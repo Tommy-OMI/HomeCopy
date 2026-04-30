@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+COMMON_ROOT = ROOT.parent / "Common"
 DIST_DIR = ROOT / "dist"
 BUILD_DIR = ROOT / "build"
 SPEC_FILE = ROOT / "HomeCopyClient.spec"
@@ -41,8 +42,12 @@ def main() -> None:
         "HomeCopyClient",
         "--paths",
         str(ROOT),
+        "--paths",
+        str(COMMON_ROOT),
         "--collect-submodules",
         "homecopy",
+        "--collect-submodules",
+        "homecopy_shared",
         "homecopy/client/launcher_main.py",
     ]
     if sys.platform != "win32":
