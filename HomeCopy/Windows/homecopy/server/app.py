@@ -42,6 +42,14 @@ async def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/stats")
+async def stats() -> dict[str, int | str]:
+    return {
+        "status": "ok",
+        "connected_clients": manager.connection_count(),
+    }
+
+
 @app.on_event("startup")
 async def on_startup() -> None:
     await discovery_broadcaster.start()

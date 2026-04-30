@@ -26,6 +26,9 @@ class ConnectionManager:
     def __init__(self) -> None:
         self._connections: dict[str, DeviceConnection] = {}
 
+    def connection_count(self) -> int:
+        return len(self._connections)
+
     def is_online(self, device_id: str) -> bool:
         return device_id in self._connections
 

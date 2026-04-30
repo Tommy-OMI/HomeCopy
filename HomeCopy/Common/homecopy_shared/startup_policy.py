@@ -138,6 +138,12 @@ def healthcheck_url_for_server(server_url: str) -> str:
     return urlunsplit((scheme, parts.netloc, "/healthz", "", ""))
 
 
+def stats_url_for_server(server_url: str) -> str:
+    parts = urlsplit(server_url)
+    scheme = "https" if parts.scheme == "wss" else "http"
+    return urlunsplit((scheme, parts.netloc, "/stats", "", ""))
+
+
 def is_local_server_url(server_url: str) -> bool:
     parts = urlsplit(server_url)
     hostname = (parts.hostname or "").lower()
@@ -304,6 +310,23 @@ def check_server_health(url: str | None = None, timeout: float = 1.0) -> tuple[b
 def is_server_healthy(url: str | None = None, timeout: float = 1.0) -> bool:
     healthy, _ = check_server_health(url=url, timeout=timeout)
     return healthy
+
+
+def get_server_stats(server_url: str, timeout: float = 0.5) -> dict[str, object] | None:
+    target = stats_url_for_server(server_url)
+    try:
+        with urllib.request.urlopen(target, timeout=timeout) as response:
+            if response.status != 200:
+                return None
+            payload = response.read().decode("utf-8")
+            import json
+
+            data = json.loads(payload)
+            if not isinstance(data, dict):
+                return None
+            return data
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return None
 
 
 def wait_for_server_health(

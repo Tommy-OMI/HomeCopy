@@ -40,6 +40,7 @@ from homecopy.paths import runtime_data_root
 from homecopy_shared import APP_VERSION
 from homecopy_shared.startup_policy import (
     EmbeddedServerController,
+    get_server_stats,
     is_local_server_url,
     local_server_display_address,
     wait_for_server_health,
@@ -182,6 +183,9 @@ class MainWindow(QMainWindow):
         self.minimize_to_tray_notice_shown = False
         self.highlighted_history_marker: tuple[str, str, str] | None = None
         self._syncing_history_selection = False
+        self.local_server_client_count = 0
+        self.server_stats_timer = QTimer(self)
+        self.server_stats_timer.setInterval(1500)
 
         self.setWindowTitle(f"HomeCopy - {self.config.device_name}")
         self.resize(1180, 760)
@@ -198,6 +202,9 @@ class MainWindow(QMainWindow):
         self._connect_runtime_signals()
         self._setup_tray_icon()
         self._refresh_header_details()
+        self.server_stats_timer.timeout.connect(self._refresh_local_server_stats)
+        self.server_stats_timer.start()
+        QTimer.singleShot(250, self._refresh_local_server_stats)
         QTimer.singleShot(500, self._setup_global_hotkey)
         self.runtime.start()
 
@@ -276,11 +283,14 @@ class MainWindow(QMainWindow):
 
         self.server_meta_label = QLabel(local_server_display_address())
         self.server_meta_label.setObjectName("MetaLabel")
+        self.server_clients_label = QLabel("Clients: 0")
+        self.server_clients_label.setObjectName("MetaLabel")
         self.server_status_label = QLabel()
         self.server_status_label.setObjectName("SectionStatus")
 
         server_layout.addLayout(server_header_row)
         server_layout.addWidget(self.server_meta_label)
+        server_layout.addWidget(self.server_clients_label)
         server_layout.addWidget(self.server_status_label)
 
         layout.addWidget(self.client_section, 1)
@@ -529,6 +539,7 @@ class MainWindow(QMainWindow):
             if self.runtime is not None and self._is_local_client_target():
                 self.runtime.disconnect_client()
             self.server_controller.shutdown()
+            self.local_server_client_count = 0
             self._refresh_server_section()
             self.statusBar().showMessage("Local relay server stopped.", 5000)
             return
@@ -539,14 +550,16 @@ class MainWindow(QMainWindow):
         self.server_controller.start(runtime_data_root())
         if not wait_for_server_health(root=runtime_data_root()):
             self.server_controller.shutdown()
+            self.local_server_client_count = 0
             self._refresh_server_section()
             QMessageBox.warning(self, "HomeCopy", "Unable to restart the local HomeCopy server.")
             return
 
         if self.runtime is not None and self._is_local_client_target():
             self.runtime.connect_client()
+        self._refresh_local_server_stats()
         self._refresh_server_section()
-        self.statusBar().showMessage("Local relay server restarted.", 5000)
+        self.statusBar().showMessage("Local relay server started.", 5000)
 
     def _clear_history(self) -> None:
         if self.runtime is None or not self.current_history:
@@ -738,6 +751,36 @@ class MainWindow(QMainWindow):
             self.client_status_label.setText("Status: connecting")
         self._refresh_server_section()
 
+    def _refresh_local_server_stats(self) -> None:
+        if not self._should_show_server_section():
+            self.local_server_client_count = 0
+            return
+
+        if self.server_controller.started_by_app and not self.server_controller.is_running():
+            self.local_server_client_count = 0
+            self._refresh_server_section()
+            return
+
+        target_server_url = self.config.server_url if self._is_local_client_target() else local_server_display_address()
+        if "://" not in target_server_url:
+            target_server_url = f"ws://{target_server_url}/ws"
+
+        stats = get_server_stats(target_server_url)
+        if stats is None:
+            if self.server_controller.started_by_app and self.server_controller.is_running():
+                self.local_server_client_count = max(self.local_server_client_count, 0)
+            else:
+                self.local_server_client_count = 0
+            self._refresh_server_section()
+            return
+
+        connected_clients = stats.get("connected_clients", 0)
+        try:
+            self.local_server_client_count = max(0, int(connected_clients))
+        except (TypeError, ValueError):
+            self.local_server_client_count = 0
+        self._refresh_server_section()
+
     def _refresh_server_section(self) -> None:
         show_local_server = self._should_show_server_section()
         self.server_section.setVisible(show_local_server)
@@ -745,18 +788,19 @@ class MainWindow(QMainWindow):
             return
 
         self.server_meta_label.setText(f"Listen: {local_server_display_address()}")
+        self.server_clients_label.setText(f"Clients: {self.local_server_client_count}")
         if self.server_controller.started_by_app:
             if self.server_controller.is_running():
                 self.server_status_label.setText("Status: running")
                 self.server_toggle_button.setText("Stop Server")
             else:
                 self.server_status_label.setText("Status: stopped")
-                self.server_toggle_button.setText("Restart Server")
+                self.server_toggle_button.setText("Start Server")
             self.server_toggle_button.setEnabled(True)
             return
 
         self.server_status_label.setText("Status: external")
-        self.server_toggle_button.setText("Stop Server")
+        self.server_toggle_button.setText("Start Server")
         self.server_toggle_button.setEnabled(False)
 
     def _should_show_server_section(self) -> bool:
