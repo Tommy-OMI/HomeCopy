@@ -2,45 +2,42 @@
 
 这是 HomeCopy 的统一仓库。HomeCopy 是一个用于局域网内在不同机器之间发送短文本，并可直接写入对方剪贴板的桌面工具。
 
-当前仓库结构不是把所有源码平铺在根目录，而是把真正项目内容放在 `HomeCopy/` 子目录中。
-
 ## 目录结构
 
 ```text
-/Users/tommyclaw/OMI/Tools
+/Users/tommyclaw/OMI/Tools/HomeCopy
 ├── AGENTS.md
 ├── README.md
-└── HomeCopy/
-    ├── Common/
-    │   └── homecopy_shared/
-    ├── MacOS/
-    │   ├── homecopy/
-    │   ├── package_macos.command
-    │   └── requirements.txt
-    └── Windows/
-        ├── homecopy/
-        ├── build_client.bat
-        ├── scripts/
-        └── requirements.txt
+├── Common/
+│   └── homecopy_shared/
+├── MacOS/
+│   ├── homecopy/
+│   ├── package_macos.command
+│   └── requirements.txt
+└── Windows/
+    ├── homecopy/
+    ├── build_client.bat
+    ├── scripts/
+    └── requirements.txt
 ```
 
 ## 平台说明
 
 ### macOS
 
-- GUI 客户端与本地 relay server 都在 `HomeCopy/MacOS/homecopy/`
-- 打包脚本为 `HomeCopy/MacOS/package_macos.command`
+- GUI 客户端与本地 relay server 都在 `MacOS/homecopy/`
+- 打包脚本为 `MacOS/package_macos.command`
 - 打包后生成 `.app`
 
 ### Windows
 
-- GUI 客户端与本地 relay server 都在 `HomeCopy/Windows/homecopy/`
+- GUI 客户端与本地 relay server 都在 `Windows/homecopy/`
 - Windows 侧保留 `.bat` 与 `scripts/` 作为 build / start / stop 入口
 - 打包后生成 `.exe`
 
 ### Common
 
-`HomeCopy/Common/homecopy_shared/` 用来放跨平台共享逻辑，例如：
+`Common/homecopy_shared/` 用来放跨平台共享逻辑，例如：
 
 - 启动策略
 - 共享主窗口

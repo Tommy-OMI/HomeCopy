@@ -1,14 +1,14 @@
 # HomeCopy 工作约定
 
-本仓库用于维护 HomeCopy 的整体工程。仓库根目录下实际项目位于 `HomeCopy/` 目录内，里面按平台拆分为：
+本仓库用于维护 HomeCopy 的整体工程。仓库根目录直接按平台拆分为：
 
-- `HomeCopy/Common/`: 跨平台共享逻辑与共享 UI
-- `HomeCopy/MacOS/`: macOS 客户端与本地 relay server 工程
-- `HomeCopy/Windows/`: Windows 客户端与本地 relay server 工程
+- `Common/`: 跨平台共享逻辑与共享 UI
+- `MacOS/`: macOS 客户端与本地 relay server 工程
+- `Windows/`: Windows 客户端与本地 relay server 工程
 
 ## 修改原则
 
-1. 优先复用 `HomeCopy/Common/` 中的共享逻辑，不重复在两个平台各写一份。
+1. 优先复用 `Common/` 中的共享逻辑，不重复在两个平台各写一份。
 2. 如果是平台特有实现，例如：
    - macOS 的原生热键注册
    - Windows 的原生全局热键与批处理构建脚本
@@ -18,7 +18,7 @@
 
 ## 常用路径
 
-- 仓库根目录：`/Users/tommyclaw/OMI/Tools`
+- 仓库根目录：`/Users/tommyclaw/OMI/Tools/HomeCopy`
 - 项目根目录：`/Users/tommyclaw/OMI/Tools/HomeCopy`
 - macOS 打包脚本：`/Users/tommyclaw/OMI/Tools/HomeCopy/MacOS/package_macos.command`
 - Windows 共享目录：`/Volumes/OMI-WinDev/AIAgent/HomeCopy`
