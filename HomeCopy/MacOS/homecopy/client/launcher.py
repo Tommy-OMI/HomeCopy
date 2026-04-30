@@ -59,6 +59,7 @@ def launch_gui(config_arg: str | None = None) -> None:
     from homecopy.client.ui.main_window import create_application
 
     app = QApplication.instance() or QApplication([])
+    app.setQuitOnLastWindowClosed(False)
     root = runtime_data_root()
     config_path = resolve_config_path(config_arg)
 
@@ -72,7 +73,7 @@ def launch_gui(config_arg: str | None = None) -> None:
         QMessageBox.information(None, "HomeCopy", str(exc))
         return
 
-    app.aboutToQuit.connect(launch_context.server_controller.shutdown)
+    app.aboutToQuit.connect(lambda: launch_context.server_controller.shutdown())
 
     try:
         app, window = create_application(
@@ -80,6 +81,7 @@ def launch_gui(config_arg: str | None = None) -> None:
             launch_context.config,
             launch_context.server_controller,
         )
+        app.setQuitOnLastWindowClosed(True)
         window.show()
         app.exec()
     finally:

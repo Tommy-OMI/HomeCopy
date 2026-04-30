@@ -197,8 +197,8 @@ class MainWindow(QMainWindow):
         self.runtime = ClientRuntimeThread(self.config)
         self._connect_runtime_signals()
         self._setup_tray_icon()
-        self._setup_global_hotkey()
         self._refresh_header_details()
+        QTimer.singleShot(500, self._setup_global_hotkey)
         self.runtime.start()
 
     def _build_ui(self) -> None:
@@ -210,7 +210,7 @@ class MainWindow(QMainWindow):
 
         content_layout = QHBoxLayout()
         content_layout.setSpacing(18)
-        content_layout.addWidget(self._build_device_panel(), 1)
+        content_layout.addWidget(self._build_device_panel(), 2)
         content_layout.addWidget(self._build_editor_panel(), 7)
         root_layout.addLayout(content_layout)
 
@@ -290,8 +290,8 @@ class MainWindow(QMainWindow):
     def _build_device_panel(self) -> QWidget:
         panel = QFrame()
         panel.setObjectName("Panel")
-        panel.setMinimumWidth(160)
-        panel.setMaximumWidth(220)
+        panel.setMinimumWidth(220)
+        panel.setMaximumWidth(290)
 
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(18, 18, 18, 18)
@@ -302,8 +302,8 @@ class MainWindow(QMainWindow):
 
         self.device_list = QListWidget()
         self.device_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.device_list.setMinimumWidth(140)
-        self.device_list.setMaximumWidth(190)
+        self.device_list.setMinimumWidth(196)
+        self.device_list.setMaximumWidth(248)
 
         self.selected_device_label = QLabel("Target: none")
         self.selected_device_label.setStyleSheet("font-weight: 700; color: #183153;")
