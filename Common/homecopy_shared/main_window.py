@@ -297,17 +297,21 @@ class MainWindow(QMainWindow):
         server_header_row.addStretch(1)
         server_header_row.addWidget(self.server_toggle_button)
 
+        server_meta_row = QHBoxLayout()
+        server_meta_row.setSpacing(18)
         self.server_meta_label = QLabel(local_server_display_address())
         self.server_meta_label.setObjectName("MetaLabel")
         self.server_clients_label = QLabel("Clients: 0")
         self.server_clients_label.setObjectName("MetaLabel")
         self.server_status_label = QLabel()
         self.server_status_label.setObjectName("SectionStatus")
+        self.server_status_label.hide()
 
         server_layout.addLayout(server_header_row)
-        server_layout.addWidget(self.server_meta_label)
-        server_layout.addWidget(self.server_clients_label)
-        server_layout.addWidget(self.server_status_label)
+        server_meta_row.addWidget(self.server_meta_label)
+        server_meta_row.addWidget(self.server_clients_label)
+        server_meta_row.addStretch(1)
+        server_layout.addLayout(server_meta_row)
 
         layout.addWidget(self.client_section, 1)
         layout.addWidget(self.server_section, 1)
@@ -829,15 +833,12 @@ class MainWindow(QMainWindow):
         self.server_clients_label.setText(f"Clients: {self.local_server_client_count}")
         if self.server_controller.started_by_app:
             if self.server_controller.is_running():
-                self.server_status_label.setText("Status: running")
                 self.server_toggle_button.setText("Stop Server")
             else:
-                self.server_status_label.setText("Status: stopped")
                 self.server_toggle_button.setText("Start Server")
             self.server_toggle_button.setEnabled(True)
             return
 
-        self.server_status_label.setText("Status: external")
         self.server_toggle_button.setText("Start Server")
         self.server_toggle_button.setEnabled(False)
 
