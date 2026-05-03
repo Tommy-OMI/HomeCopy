@@ -38,3 +38,12 @@ def format_server_display(server_url: str) -> str:
     if not parts.scheme or not parts.netloc:
         return server_url
     return parts.netloc
+
+
+def format_notification_message(sender_name: str, text: str, *, limit: int = 160) -> str:
+    collapsed = " ".join(text.split())
+    if not collapsed:
+        return f"New text from {sender_name}"
+    if len(collapsed) > limit:
+        collapsed = f"{collapsed[: max(0, limit - 1)].rstrip()}…"
+    return f"{sender_name}: {collapsed}"

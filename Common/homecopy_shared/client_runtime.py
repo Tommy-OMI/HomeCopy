@@ -13,7 +13,6 @@ from homecopy.client.config import ClientConfig
 from homecopy.client.network.client import HomeCopyClient
 from homecopy.client.services.clipboard_service import ClipboardService
 from homecopy.client.services.history_service import HistoryService
-from homecopy.client.services.notification_service import NotificationService
 from homecopy.shared.models import ErrorMessage, HistoryRecord, IncomingTextMessage, SendAckMessage
 
 
@@ -34,7 +33,6 @@ class ClientRuntimeThread(QThread):
         self.loop: asyncio.AbstractEventLoop | None = None
         self.history_service = HistoryService(config.history_path, config.history_limit)
         self.clipboard_service = ClipboardService()
-        self.notification_service = NotificationService()
         self.current_devices: list[dict] = []
         self._connection_task: asyncio.Task[None] | None = None
 
@@ -152,9 +150,6 @@ class ClientRuntimeThread(QThread):
                 self.clipboard_service.copy_text(message.text)
             except Exception as exc:  # pragma: no cover - OS-specific clipboard behavior
                 self.error_received.emit(f"Clipboard update failed: {exc}")
-
-        if self.config.show_notification:
-            self.notification_service.notify("HomeCopy", f"New text from {message.from_name}")
 
         self.incoming_text.emit(message.model_dump(by_alias=True, mode="json"))
         self.history_service.append(

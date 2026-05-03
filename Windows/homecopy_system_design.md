@@ -378,7 +378,7 @@ HOST=0.0.0.0
 PORT=8765
 AUTH_TOKEN=replace-with-a-long-random-secret
 LOG_LEVEL=INFO
-MAX_TEXT_LENGTH=4000
+MAX_TEXT_LENGTH=20000
 ```
 
 ### 10.2 客户端配置
@@ -402,7 +402,7 @@ MAX_TEXT_LENGTH=4000
 ### 11.1 第一版最低安全要求
 
 - 所有客户端必须提供正确 token 才能注册
-- 限制最大文本长度，默认 `4000`
+- 限制最大文本长度，默认 `20000`
 - 服务端只接受 JSON 文本消息
 - 服务端不执行任何客户端内容
 - 日志中不记录完整敏感文本，可只记录来源、目标和长度

@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 
 from homecopy.client.config import ClientConfig
 from homecopy.client.services.hotkey_service import GlobalHotkeyManager
+from homecopy.client.services.notification_service import NotificationService
 from homecopy.client.ui.hotkey_dialog import HotkeyDialog
 from homecopy.client.ui.runtime import ClientRuntimeThread
 from homecopy.client.ui.setup_dialog import SetupDialog
@@ -49,6 +50,7 @@ from homecopy_shared.ui_formatting import (
     format_device_label,
     format_history_direction,
     format_history_timestamp,
+    format_notification_message,
     format_server_display,
 )
 
@@ -178,6 +180,7 @@ class MainWindow(QMainWindow):
         self.current_devices: list[dict] = []
         self.current_history: list[dict] = []
         self.tray_icon: QSystemTrayIcon | None = None
+        self.notification_service = NotificationService()
         self.hotkey_manager = GlobalHotkeyManager(self)
         self.server_controller = server_controller or EmbeddedServerController()
         self.minimize_to_tray_notice_shown = False
@@ -689,6 +692,7 @@ class MainWindow(QMainWindow):
         sender_id = str(message.get("from") or "")
         text = str(message.get("text") or "")
         self.highlighted_history_marker = (sender_id, sender_name, text)
+        self._show_incoming_notification(sender_name, text)
         self.statusBar().showMessage(f"Received text from {sender_name}", 8000)
 
     def _handle_ack(self, request_id: str) -> None:
@@ -824,6 +828,20 @@ class MainWindow(QMainWindow):
 
     def _is_local_client_target(self) -> bool:
         return is_local_server_url(self.config.server_url)
+
+    def _show_incoming_notification(self, sender_name: str, text: str) -> None:
+        if not self.config.show_notification:
+            return
+
+        notification_text = format_notification_message(sender_name, text)
+        if self.tray_icon is not None:
+            self.tray_icon.showMessage(
+                "HomeCopy",
+                notification_text,
+                QSystemTrayIcon.Information,
+                5000,
+            )
+        self.notification_service.notify("HomeCopy", notification_text)
 
     def event(self, event: QEvent) -> bool:
         if (
