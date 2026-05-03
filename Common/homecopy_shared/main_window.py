@@ -261,6 +261,8 @@ class MainWindow(QMainWindow):
         client_header_row.addStretch(1)
         client_header_row.addWidget(self.connection_button)
 
+        client_meta_row = QHBoxLayout()
+        client_meta_row.setSpacing(18)
         self.client_device_label = QLabel()
         self.client_device_label.setObjectName("MetaLabel")
         self.client_ip_label = QLabel()
@@ -269,12 +271,14 @@ class MainWindow(QMainWindow):
         self.client_server_label.setObjectName("MetaLabel")
         self.client_status_label = QLabel()
         self.client_status_label.setObjectName("SectionStatus")
+        self.client_status_label.hide()
 
         client_layout.addLayout(client_header_row)
-        client_layout.addWidget(self.client_device_label)
-        client_layout.addWidget(self.client_ip_label)
-        client_layout.addWidget(self.client_server_label)
-        client_layout.addWidget(self.client_status_label)
+        client_meta_row.addWidget(self.client_device_label)
+        client_meta_row.addWidget(self.client_ip_label)
+        client_meta_row.addWidget(self.client_server_label)
+        client_meta_row.addStretch(1)
+        client_layout.addLayout(client_meta_row)
 
         self.server_section = QFrame()
         self.server_section.setObjectName("TopSectionRight")
@@ -686,8 +690,6 @@ class MainWindow(QMainWindow):
         return item
 
     def _handle_status_changed(self, status: str) -> None:
-        badge_text = "reconnecting" if status.startswith("disconnected:") else status
-        self.client_status_label.setText(f"Status: {badge_text}")
         self.connection_button.setText("Connect" if status == "disconnected" else "Disconnect")
         self.statusBar().showMessage(status)
 
@@ -772,8 +774,6 @@ class MainWindow(QMainWindow):
         self.client_device_label.setText(f"Device: {self.config.device_name}")
         self.client_ip_label.setText(f"IP: {resolve_preferred_local_host()}")
         self.client_server_label.setText(f"Server: {format_server_display(self.config.server_url)}")
-        if not self.client_status_label.text():
-            self.client_status_label.setText("Status: connecting")
         self._refresh_server_section()
 
     def _refresh_local_server_stats(self) -> None:
