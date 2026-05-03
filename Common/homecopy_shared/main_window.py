@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QColor
+from PySide6.QtCore import QEvent, QRectF, Qt, QTimer
+from PySide6.QtGui import QAction, QCloseEvent, QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -192,6 +192,9 @@ class MainWindow(QMainWindow):
         self._hidden_to_tray = False
         self._restoring_from_tray = False
         self._tray_hide_pending = False
+        self._tray_has_unread_message = False
+        self._default_tray_icon: QIcon | None = None
+        self._unread_tray_icon: QIcon | None = None
         self.server_stats_timer = QTimer(self)
         self.server_stats_timer.setInterval(1500)
         self.remote_server_version = ""
@@ -451,8 +454,9 @@ class MainWindow(QMainWindow):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             return
 
-        tray_icon = QSystemTrayIcon(self.style().standardIcon(QStyle.SP_ComputerIcon), self)
-        tray_icon.setToolTip("HomeCopy")
+        self._default_tray_icon = self._build_tray_icon(False)
+        self._unread_tray_icon = self._build_tray_icon(True)
+        tray_icon = QSystemTrayIcon(self)
         tray_icon.activated.connect(self._handle_tray_activated)
 
         tray_menu = QMenu(self)
@@ -468,8 +472,64 @@ class MainWindow(QMainWindow):
         tray_menu.addAction(quit_action)
 
         tray_icon.setContextMenu(tray_menu)
-        tray_icon.show()
         self.tray_icon = tray_icon
+        self._update_tray_icon()
+        tray_icon.show()
+
+    def _build_tray_icon(self, has_unread: bool) -> QIcon:
+        base_icon = self.style().standardIcon(QStyle.SP_ComputerIcon)
+        if not has_unread:
+            return base_icon
+
+        icon = QIcon()
+        for size in (16, 18, 20, 22, 24, 32):
+            pixmap = base_icon.pixmap(size, size)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            diameter = max(6, int(size * 0.42))
+            margin = max(1, int(size * 0.06))
+            dot_rect = QRectF(size - diameter - margin, margin, diameter, diameter)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor("#d96d3a"))
+            painter.drawEllipse(dot_rect)
+            painter.setBrush(QColor("#fffaf2"))
+            inner_rect = dot_rect.adjusted(
+                diameter * 0.3,
+                diameter * 0.3,
+                -diameter * 0.3,
+                -diameter * 0.3,
+            )
+            painter.drawEllipse(inner_rect)
+            painter.end()
+            icon.addPixmap(pixmap)
+        return icon
+
+    def _update_tray_icon(self) -> None:
+        if self.tray_icon is None:
+            return
+        icon = self._unread_tray_icon if self._tray_has_unread_message else self._default_tray_icon
+        if icon is not None:
+            self.tray_icon.setIcon(icon)
+        tooltip = "HomeCopy"
+        if self._tray_has_unread_message:
+            tooltip = "HomeCopy (new message)"
+        self.tray_icon.setToolTip(tooltip)
+
+    def _set_tray_unread_message(self, has_unread: bool) -> None:
+        if self._tray_has_unread_message == has_unread:
+            return
+        self._tray_has_unread_message = has_unread
+        self._update_tray_icon()
+
+    def _should_mark_tray_unread(self) -> bool:
+        return (
+            self.tray_icon is not None
+            and (
+                self._hidden_to_tray
+                or not self.isVisible()
+                or not self.isActiveWindow()
+            )
+        )
 
     def _setup_global_hotkey(self) -> None:
         if not self.hotkey_manager.set_hotkey(self.config.global_hotkey):
@@ -531,6 +591,7 @@ class MainWindow(QMainWindow):
         self._tray_hide_pending = False
         self._hidden_to_tray = False
         self._restoring_from_tray = True
+        self._set_tray_unread_message(False)
         self.showNormal()
         self.raise_()
         self.activateWindow()
@@ -860,6 +921,8 @@ class MainWindow(QMainWindow):
         return is_local_server_url(self.config.server_url)
 
     def _show_incoming_notification(self, sender_name: str, text: str) -> None:
+        if self._should_mark_tray_unread():
+            self._set_tray_unread_message(True)
         if not self.config.show_notification:
             return
 
@@ -880,6 +943,8 @@ class MainWindow(QMainWindow):
             and not self._restoring_from_tray
         ):
             QTimer.singleShot(0, self._restore_from_tray)
+        if event.type() == QEvent.WindowActivate:
+            self._set_tray_unread_message(False)
         return super().event(event)
 
     def eventFilter(self, watched: object, event: QEvent) -> bool:
