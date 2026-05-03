@@ -419,6 +419,7 @@ class MainWindow(QMainWindow):
         self.device_list.itemSelectionChanged.connect(self._update_selected_device_label)
         self.device_list.itemDoubleClicked.connect(lambda _: self._send_current_text())
         self.history_table.cellPressed.connect(self._handle_history_cell_pressed)
+        self.history_table.cellDoubleClicked.connect(self._handle_history_cell_double_clicked)
         self.history_table.itemSelectionChanged.connect(self._normalize_history_selection)
         self.hotkey_manager.activated.connect(self._toggle_visibility_from_hotkey)
         self.hotkey_manager.registration_failed.connect(self._handle_hotkey_registration_failed)
@@ -629,6 +630,7 @@ class MainWindow(QMainWindow):
             device_version = str(device.get("version") or "")
             item = QListWidgetItem(format_device_label(device_name, device_id, device_version or None))
             item.setData(Qt.UserRole, device["device_id"])
+            item.setData(Qt.UserRole + 1, device_name)
             self.device_list.addItem(item)
             if device["device_id"] == selected_device_id:
                 item.setSelected(True)
@@ -734,9 +736,8 @@ class MainWindow(QMainWindow):
         if not selected_items:
             self.selected_device_label.setText("Target: none")
             return
-        device_id = selected_items[0].data(Qt.UserRole)
-        device_name = selected_items[0].text().splitlines()[0]
-        self.selected_device_label.setText(f"Target: {device_name} ({device_id})")
+        device_name = selected_items[0].data(Qt.UserRole + 1) or selected_items[0].text().splitlines()[0]
+        self.selected_device_label.setText(f"Target: {device_name}")
 
     def _send_current_text(self) -> None:
         target_device_id = self._selected_device_id()
@@ -757,6 +758,16 @@ class MainWindow(QMainWindow):
         if column == HISTORY_ACTION_COLUMN:
             return
         self._select_history_message_cell(row)
+
+    def _handle_history_cell_double_clicked(self, row: int, column: int) -> None:
+        if column == HISTORY_ACTION_COLUMN:
+            return
+        item = self.history_table.item(row, HISTORY_MESSAGE_COLUMN)
+        if item is None:
+            return
+        self.editor.setPlainText(item.text())
+        self.editor.setFocus()
+        self.statusBar().showMessage("Loaded message into the editor.", 4000)
 
     def _normalize_history_selection(self) -> None:
         if self._syncing_history_selection:
