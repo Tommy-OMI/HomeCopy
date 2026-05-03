@@ -44,6 +44,7 @@ from homecopy_shared.startup_policy import (
     get_server_stats,
     is_local_server_url,
     local_server_display_address,
+    resolve_preferred_local_host,
     wait_for_server_health,
 )
 from homecopy_shared.ui_formatting import (
@@ -262,6 +263,8 @@ class MainWindow(QMainWindow):
 
         self.client_device_label = QLabel()
         self.client_device_label.setObjectName("MetaLabel")
+        self.client_ip_label = QLabel()
+        self.client_ip_label.setObjectName("MetaLabel")
         self.client_server_label = QLabel()
         self.client_server_label.setObjectName("MetaLabel")
         self.client_status_label = QLabel()
@@ -269,6 +272,7 @@ class MainWindow(QMainWindow):
 
         client_layout.addLayout(client_header_row)
         client_layout.addWidget(self.client_device_label)
+        client_layout.addWidget(self.client_ip_label)
         client_layout.addWidget(self.client_server_label)
         client_layout.addWidget(self.client_status_label)
 
@@ -766,6 +770,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_header_details(self) -> None:
         self.client_device_label.setText(f"Device: {self.config.device_name}")
+        self.client_ip_label.setText(f"IP: {resolve_preferred_local_host()}")
         self.client_server_label.setText(f"Server: {format_server_display(self.config.server_url)}")
         if not self.client_status_label.text():
             self.client_status_label.setText("Status: connecting")
