@@ -18,6 +18,7 @@ from homecopy.shared.constants import (
     DEFAULT_HEARTBEAT_INTERVAL,
     DEFAULT_HEARTBEAT_TIMEOUT,
     DEFAULT_RECONNECT_DELAYS,
+    ERROR_INVALID_MESSAGE,
     PROTOCOL_VERSION,
 )
 from homecopy.shared.models import (
@@ -51,6 +52,7 @@ class HomeCopyClient:
         self.on_status: StatusHandler | None = None
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._last_heartbeat_ack_at = 0.0
+        self._heartbeat_supported = True
 
     async def emit_status(self, status: str) -> None:
         logger.info("Client status: %s", status)
@@ -67,6 +69,7 @@ class HomeCopyClient:
                 async with websockets.connect(self.config.server_url, ping_interval=20, ping_timeout=20) as websocket:
                     self.websocket = websocket
                     attempt = 0
+                    self._heartbeat_supported = True
                     await self._register()
                     self._last_heartbeat_ack_at = asyncio.get_running_loop().time()
                     self._start_heartbeat_task()
@@ -140,6 +143,13 @@ class HomeCopyClient:
 
             if message_type == "error":
                 error = error_adapter.validate_python(payload)
+                if self._is_legacy_heartbeat_error(error):
+                    self._heartbeat_supported = False
+                    logger.warning(
+                        "Connected server does not support heartbeat messages; "
+                        "falling back to websocket ping keepalive only"
+                    )
+                    continue
                 if self.on_error is not None:
                     await self.on_error(error)
                 continue
@@ -179,6 +189,8 @@ class HomeCopyClient:
             await asyncio.sleep(DEFAULT_HEARTBEAT_INTERVAL)
             if self.websocket is None or not self.running:
                 return
+            if not self._heartbeat_supported:
+                return
 
             loop = asyncio.get_running_loop()
             if loop.time() - self._last_heartbeat_ack_at > DEFAULT_HEARTBEAT_TIMEOUT:
@@ -191,6 +203,12 @@ class HomeCopyClient:
                 "sent_at": datetime.now(timezone.utc).isoformat(),
             }
             await self.websocket.send(json.dumps(payload, ensure_ascii=False))
+
+    def _is_legacy_heartbeat_error(self, error: ErrorMessage) -> bool:
+        return (
+            error.code == ERROR_INVALID_MESSAGE
+            and error.message.strip() == "Only send_text is supported after register."
+        )
 
     def build_history_record(self, direction: str, peer_device_id: str, peer_device_name: str, text: str) -> dict:
         return {
