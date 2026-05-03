@@ -28,6 +28,7 @@ from homecopy.shared.models import (
     RegisterOkMessage,
     SendAckMessage,
 )
+from homecopy_shared import APP_VERSION
 
 settings = get_settings()
 setup_logging(settings.log_level)
@@ -87,18 +88,21 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             device_id=register_message.device_id,
             device_name=register_message.device_name,
             remote_addr=client_host,
+            version=register_message.version,
         )
 
         logger.info(
-            "Device registered device_id=%s device_name=%s remote_addr=%s",
+            "Device registered device_id=%s device_name=%s version=%s remote_addr=%s",
             register_message.device_id,
             register_message.device_name,
+            register_message.version or "unknown",
             client_host,
         )
 
         await websocket.send_json(
             RegisterOkMessage(
                 self=register_message.device_id,
+                server_version=APP_VERSION,
                 online_devices=manager.get_device_list(exclude_device_id=register_message.device_id),
             ).model_dump(mode="json")
         )

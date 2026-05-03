@@ -194,6 +194,7 @@ class MainWindow(QMainWindow):
         self._tray_hide_pending = False
         self.server_stats_timer = QTimer(self)
         self.server_stats_timer.setInterval(1500)
+        self.remote_server_version = ""
 
         self.setWindowTitle(f"HomeCopy - {self.config.device_name}")
         self.resize(1180, 760)
@@ -422,6 +423,7 @@ class MainWindow(QMainWindow):
         assert self.runtime is not None
         self.runtime.status_changed.connect(self._handle_status_changed)
         self.runtime.devices_changed.connect(self._populate_devices)
+        self.runtime.server_version_changed.connect(self._handle_server_version_changed)
         self.runtime.incoming_text.connect(self._handle_incoming_text)
         self.runtime.ack_received.connect(self._handle_ack)
         self.runtime.error_received.connect(self._handle_error)
@@ -620,7 +622,8 @@ class MainWindow(QMainWindow):
         for device in self.current_devices:
             device_name = str(device["device_name"])
             device_id = str(device["device_id"])
-            item = QListWidgetItem(format_device_label(device_name, device_id))
+            device_version = str(device.get("version") or "")
+            item = QListWidgetItem(format_device_label(device_name, device_id, device_version or None))
             item.setData(Qt.UserRole, device["device_id"])
             self.device_list.addItem(item)
             if device["device_id"] == selected_device_id:
@@ -691,7 +694,14 @@ class MainWindow(QMainWindow):
 
     def _handle_status_changed(self, status: str) -> None:
         self.connection_button.setText("Connect" if status == "disconnected" else "Disconnect")
+        if status in {"connecting", "disconnected"}:
+            self.remote_server_version = ""
+            self._refresh_header_details()
         self.statusBar().showMessage(status)
+
+    def _handle_server_version_changed(self, version: str) -> None:
+        self.remote_server_version = version.strip()
+        self._refresh_header_details()
 
     def _handle_incoming_text(self, message: dict) -> None:
         sender_name = str(message.get("from_name") or message.get("from") or "Unknown device")
@@ -773,7 +783,10 @@ class MainWindow(QMainWindow):
     def _refresh_header_details(self) -> None:
         self.client_device_label.setText(f"Device: {self.config.device_name}")
         self.client_ip_label.setText(f"IP: {resolve_preferred_local_host()}")
-        self.client_server_label.setText(f"Server: {format_server_display(self.config.server_url)}")
+        server_text = format_server_display(self.config.server_url)
+        if self.remote_server_version:
+            server_text = f"{server_text} (v{self.remote_server_version})"
+        self.client_server_label.setText(f"Server: {server_text}")
         self._refresh_server_section()
 
     def _refresh_local_server_stats(self) -> None:

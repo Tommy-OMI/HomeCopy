@@ -21,6 +21,7 @@ class ClientRuntimeThread(QThread):
 
     status_changed = Signal(str)
     devices_changed = Signal(list)
+    server_version_changed = Signal(str)
     incoming_text = Signal(dict)
     ack_received = Signal(str)
     error_received = Signal(str)
@@ -46,6 +47,7 @@ class ClientRuntimeThread(QThread):
         self.client.on_ack = self._handle_ack
         self.client.on_error = self._handle_error
         self.client.on_status = self._handle_status
+        self.client.on_server_version = self._handle_server_version
 
         self._emit_history_snapshot()
         self._ensure_client_connection()
@@ -116,6 +118,7 @@ class ClientRuntimeThread(QThread):
             future.result()
         self.current_devices = []
         self.devices_changed.emit([])
+        self.server_version_changed.emit("")
         self.status_changed.emit("disconnected")
 
     def _after_send(self, future: Future[None], target_device_id: str, text: str) -> None:
@@ -171,6 +174,9 @@ class ClientRuntimeThread(QThread):
 
     async def _handle_status(self, status: str) -> None:
         self.status_changed.emit(status)
+
+    async def _handle_server_version(self, version: str) -> None:
+        self.server_version_changed.emit(version)
 
     def _emit_history_snapshot(self) -> None:
         records = [item.model_dump(mode="json") for item in self.history_service.load()]

@@ -18,6 +18,7 @@ def normalize_device_id(value: str) -> str:
 class DeviceSummary(BaseModel):
     device_id: str = Field(pattern=r"^[A-Za-z0-9-]+$")
     device_name: str
+    version: str | None = None
 
     @field_validator("device_id")
     @classmethod
@@ -30,6 +31,7 @@ class RegisterMessage(BaseModel):
     protocol_version: int = Field(default=PROTOCOL_VERSION)
     device_id: str = Field(pattern=r"^[A-Za-z0-9-]+$")
     device_name: str = Field(min_length=1, max_length=100)
+    version: str | None = None
     token: str = ""
 
     @field_validator("device_id")
@@ -41,6 +43,7 @@ class RegisterMessage(BaseModel):
 class RegisterOkMessage(BaseModel):
     type: Literal["register_ok"] = "register_ok"
     self: str
+    server_version: str | None = None
     online_devices: list[DeviceSummary]
 
 

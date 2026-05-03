@@ -18,6 +18,7 @@ class DeviceConnection:
     websocket: WebSocket
     device_id: str
     device_name: str
+    version: str | None
     connected_at: datetime
     remote_addr: str
 
@@ -41,12 +42,19 @@ class ConnectionManager:
     def get_device_list(self, exclude_device_id: str | None = None) -> list[DeviceSummary]:
         excluded = normalize_device_id(exclude_device_id) if exclude_device_id else None
         return [
-            DeviceSummary(device_id=conn.device_id, device_name=conn.device_name)
+            DeviceSummary(device_id=conn.device_id, device_name=conn.device_name, version=conn.version)
             for conn in sorted(self._connections.values(), key=lambda item: item.device_name.lower())
             if conn.device_id != excluded
         ]
 
-    async def register(self, websocket: WebSocket, device_id: str, device_name: str, remote_addr: str) -> None:
+    async def register(
+        self,
+        websocket: WebSocket,
+        device_id: str,
+        device_name: str,
+        remote_addr: str,
+        version: str | None = None,
+    ) -> None:
         device_id = normalize_device_id(device_id)
         existing = self._connections.get(device_id)
         if existing is not None:
@@ -57,6 +65,7 @@ class ConnectionManager:
             websocket=websocket,
             device_id=device_id,
             device_name=device_name,
+            version=version,
             connected_at=datetime.now(timezone.utc),
             remote_addr=remote_addr,
         )

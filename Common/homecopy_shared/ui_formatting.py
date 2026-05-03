@@ -14,10 +14,11 @@ def normalize_device_id(value: str) -> str:
     return value.strip().lower()
 
 
-def format_device_label(device_name: str, device_id: str) -> str:
+def format_device_label(device_name: str, device_id: str, version: str | None = None) -> str:
+    version_suffix = f" (v{version})" if version else ""
     if normalize_device_label_key(device_name) == normalize_device_label_key(device_id):
-        return device_name
-    return f"{device_name}\n{device_id}"
+        return f"{device_name}{version_suffix}"
+    return f"{device_name}{version_suffix}\n{device_id}"
 
 
 def format_history_direction(direction: str) -> str:

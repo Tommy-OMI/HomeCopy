@@ -29,6 +29,7 @@ from homecopy.shared.models import (
     RegisterOkMessage,
     SendAckMessage,
 )
+from homecopy_shared import APP_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ IncomingHandler = Callable[[IncomingTextMessage], Awaitable[None]]
 AckHandler = Callable[[SendAckMessage], Awaitable[None]]
 ErrorHandler = Callable[[ErrorMessage], Awaitable[None]]
 StatusHandler = Callable[[str], Awaitable[None]]
+ServerVersionHandler = Callable[[str], Awaitable[None]]
 
 
 class HomeCopyClient:
@@ -50,9 +52,11 @@ class HomeCopyClient:
         self.on_ack: AckHandler | None = None
         self.on_error: ErrorHandler | None = None
         self.on_status: StatusHandler | None = None
+        self.on_server_version: ServerVersionHandler | None = None
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._last_heartbeat_ack_at = 0.0
         self._heartbeat_supported = True
+        self.server_version: str | None = None
 
     async def emit_status(self, status: str) -> None:
         logger.info("Client status: %s", status)
@@ -83,6 +87,7 @@ class HomeCopyClient:
                 attempt += 1
                 await asyncio.sleep(delay)
             finally:
+                self.server_version = None
                 await self._stop_heartbeat_task()
                 self.websocket = None
 
@@ -93,6 +98,7 @@ class HomeCopyClient:
             "protocol_version": PROTOCOL_VERSION,
             "device_id": self.config.device_id,
             "device_name": self.config.device_name,
+            "version": APP_VERSION,
             "token": self.config.auth_token,
         }
         await self.websocket.send(json.dumps(register_payload, ensure_ascii=False))
@@ -112,6 +118,9 @@ class HomeCopyClient:
 
             if message_type == "register_ok":
                 register_ok = register_ok_adapter.validate_python(payload)
+                self.server_version = register_ok.server_version
+                if self.on_server_version is not None:
+                    await self.on_server_version(register_ok.server_version or "")
                 self.registered_devices = [item.model_dump(mode="json") for item in register_ok.online_devices]
                 if self.on_device_list is not None:
                     await self.on_device_list(self.registered_devices)
