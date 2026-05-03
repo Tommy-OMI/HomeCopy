@@ -14,10 +14,16 @@ from pydantic import TypeAdapter
 from websockets.asyncio.client import ClientConnection
 
 from homecopy.client.config import ClientConfig
-from homecopy.shared.constants import DEFAULT_RECONNECT_DELAYS, PROTOCOL_VERSION
+from homecopy.shared.constants import (
+    DEFAULT_HEARTBEAT_INTERVAL,
+    DEFAULT_HEARTBEAT_TIMEOUT,
+    DEFAULT_RECONNECT_DELAYS,
+    PROTOCOL_VERSION,
+)
 from homecopy.shared.models import (
     DeviceListMessage,
     ErrorMessage,
+    HeartbeatAckMessage,
     IncomingTextMessage,
     RegisterOkMessage,
     SendAckMessage,
@@ -43,6 +49,8 @@ class HomeCopyClient:
         self.on_ack: AckHandler | None = None
         self.on_error: ErrorHandler | None = None
         self.on_status: StatusHandler | None = None
+        self._heartbeat_task: asyncio.Task[None] | None = None
+        self._last_heartbeat_ack_at = 0.0
 
     async def emit_status(self, status: str) -> None:
         logger.info("Client status: %s", status)
@@ -60,6 +68,8 @@ class HomeCopyClient:
                     self.websocket = websocket
                     attempt = 0
                     await self._register()
+                    self._last_heartbeat_ack_at = asyncio.get_running_loop().time()
+                    self._start_heartbeat_task()
                     await self.emit_status("connected")
                     await self._receive_loop()
             except asyncio.CancelledError:
@@ -70,6 +80,7 @@ class HomeCopyClient:
                 attempt += 1
                 await asyncio.sleep(delay)
             finally:
+                await self._stop_heartbeat_task()
                 self.websocket = None
 
     async def _register(self) -> None:
@@ -89,6 +100,7 @@ class HomeCopyClient:
         device_list_adapter = TypeAdapter(DeviceListMessage)
         incoming_adapter = TypeAdapter(IncomingTextMessage)
         ack_adapter = TypeAdapter(SendAckMessage)
+        heartbeat_ack_adapter = TypeAdapter(HeartbeatAckMessage)
         error_adapter = TypeAdapter(ErrorMessage)
 
         async for raw_message in self.websocket:
@@ -121,6 +133,11 @@ class HomeCopyClient:
                     await self.on_ack(ack)
                 continue
 
+            if message_type == "heartbeat_ack":
+                heartbeat_ack_adapter.validate_python(payload)
+                self._last_heartbeat_ack_at = asyncio.get_running_loop().time()
+                continue
+
             if message_type == "error":
                 error = error_adapter.validate_python(payload)
                 if self.on_error is not None:
@@ -140,6 +157,40 @@ class HomeCopyClient:
             "text": text,
         }
         await self.websocket.send(json.dumps(payload, ensure_ascii=False))
+
+    def _start_heartbeat_task(self) -> None:
+        if self._heartbeat_task is None or self._heartbeat_task.done():
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
+    async def _stop_heartbeat_task(self) -> None:
+        if self._heartbeat_task is None:
+            return
+
+        task = self._heartbeat_task
+        self._heartbeat_task = None
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    async def _heartbeat_loop(self) -> None:
+        while self.running and self.websocket is not None:
+            await asyncio.sleep(DEFAULT_HEARTBEAT_INTERVAL)
+            if self.websocket is None or not self.running:
+                return
+
+            loop = asyncio.get_running_loop()
+            if loop.time() - self._last_heartbeat_ack_at > DEFAULT_HEARTBEAT_TIMEOUT:
+                logger.warning("Heartbeat timed out; closing stale websocket")
+                await self.websocket.close(code=4001, reason="Heartbeat timed out")
+                return
+
+            payload = {
+                "type": "heartbeat",
+                "sent_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await self.websocket.send(json.dumps(payload, ensure_ascii=False))
 
     def build_history_record(self, direction: str, peer_device_id: str, peer_device_name: str, text: str) -> dict:
         return {

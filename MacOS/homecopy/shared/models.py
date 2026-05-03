@@ -56,6 +56,11 @@ class SendTextMessage(BaseModel):
         return normalize_device_id(value)
 
 
+class HeartbeatMessage(BaseModel):
+    type: Literal["heartbeat"] = "heartbeat"
+    sent_at: datetime
+
+
 class IncomingTextMessage(BaseModel):
     type: Literal["incoming_text"] = "incoming_text"
     message_id: UUID
@@ -71,6 +76,11 @@ class SendAckMessage(BaseModel):
     type: Literal["send_ack"] = "send_ack"
     request_id: UUID
     status: Literal["ok"]
+
+
+class HeartbeatAckMessage(BaseModel):
+    type: Literal["heartbeat_ack"] = "heartbeat_ack"
+    sent_at: datetime
 
 
 class DeviceListMessage(BaseModel):
@@ -104,11 +114,12 @@ class HistoryRecord(BaseModel):
         return normalize_device_id(value)
 
 
-ClientInboundMessage = Union[RegisterMessage, SendTextMessage]
+ClientInboundMessage = Union[RegisterMessage, SendTextMessage, HeartbeatMessage]
 ServerOutboundMessage = Union[
     RegisterOkMessage,
     IncomingTextMessage,
     SendAckMessage,
+    HeartbeatAckMessage,
     DeviceListMessage,
     ErrorMessage,
 ]

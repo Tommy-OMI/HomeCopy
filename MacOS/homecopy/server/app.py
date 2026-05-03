@@ -13,7 +13,7 @@ from homecopy.server.config import get_settings
 from homecopy.server.connection_manager import ConnectionManager
 from homecopy.server.discovery import LanDiscoveryBroadcaster
 from homecopy.server.logging_setup import setup_logging
-from homecopy.server.protocol import parse_register_message, parse_send_text_message
+from homecopy.server.protocol import parse_heartbeat_message, parse_register_message, parse_send_text_message
 from homecopy.shared.constants import (
     ERROR_AUTH_FAILED,
     ERROR_DEVICE_OFFLINE,
@@ -21,7 +21,13 @@ from homecopy.shared.constants import (
     ERROR_INVALID_MESSAGE,
     ERROR_TEXT_TOO_LONG,
 )
-from homecopy.shared.models import ErrorMessage, IncomingTextMessage, RegisterOkMessage, SendAckMessage
+from homecopy.shared.models import (
+    ErrorMessage,
+    HeartbeatAckMessage,
+    IncomingTextMessage,
+    RegisterOkMessage,
+    SendAckMessage,
+)
 
 settings = get_settings()
 setup_logging(settings.log_level)
@@ -101,8 +107,17 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         while True:
             payload = await websocket.receive_json()
             message_type = payload.get("type")
+            if message_type == "heartbeat":
+                heartbeat = parse_heartbeat_message(payload)
+                await websocket.send_json(HeartbeatAckMessage(sent_at=heartbeat.sent_at).model_dump(mode="json"))
+                continue
+
             if message_type != "send_text":
-                await send_error(websocket, ERROR_INVALID_MESSAGE, "Only send_text is supported after register.")
+                await send_error(
+                    websocket,
+                    ERROR_INVALID_MESSAGE,
+                    "Only send_text and heartbeat are supported after register.",
+                )
                 continue
 
             send_message = parse_send_text_message(payload)
@@ -128,7 +143,18 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     "sent_at": datetime.now(timezone.utc),
                 }
             )
-            await target.websocket.send_json(incoming.model_dump(by_alias=True, mode="json"))
+            try:
+                await target.websocket.send_json(incoming.model_dump(by_alias=True, mode="json"))
+            except Exception:
+                logger.warning(
+                    "Relay target send failed from=%s to=%s; removing stale connection",
+                    register_message.device_id,
+                    send_message.to,
+                )
+                manager.remove(send_message.to)
+                await manager.broadcast_device_list()
+                await send_error(websocket, ERROR_DEVICE_OFFLINE, "Target device is offline.")
+                continue
 
             logger.info(
                 "Text relayed from=%s to=%s length=%s",

@@ -35,6 +35,9 @@ class ConnectionManager:
     def get(self, device_id: str) -> DeviceConnection | None:
         return self._connections.get(normalize_device_id(device_id))
 
+    def remove(self, device_id: str) -> DeviceConnection | None:
+        return self._connections.pop(normalize_device_id(device_id), None)
+
     def get_device_list(self, exclude_device_id: str | None = None) -> list[DeviceSummary]:
         excluded = normalize_device_id(exclude_device_id) if exclude_device_id else None
         return [
