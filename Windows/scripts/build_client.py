@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -13,7 +14,6 @@ COMMON_ROOT = ROOT.parent / "Common"
 DIST_DIR = ROOT / "dist"
 BUILD_DIR = ROOT / "build"
 SPEC_FILE = ROOT / "HomeCopyClient.spec"
-DEPLOY_DIR = Path("D:/HomeCopyClient")
 
 
 def run(command: list[str]) -> None:
@@ -54,11 +54,13 @@ def main() -> None:
         command.extend(["--collect-all", "pynput"])
     run(command)
 
-    if sys.platform == "win32":
-        if DEPLOY_DIR.exists():
-            shutil.rmtree(DEPLOY_DIR)
-        shutil.copytree(DIST_DIR / "HomeCopyClient", DEPLOY_DIR, dirs_exist_ok=True)
-        print(f"[build] copied portable client to {DEPLOY_DIR}")
+    deploy_dir_raw = os.environ.get("HOMECOPY_DEPLOY_DIR", "").strip()
+    if sys.platform == "win32" and deploy_dir_raw:
+        deploy_dir = Path(deploy_dir_raw)
+        if deploy_dir.exists():
+            shutil.rmtree(deploy_dir)
+        shutil.copytree(DIST_DIR / "HomeCopyClient", deploy_dir, dirs_exist_ok=True)
+        print(f"[build] copied portable client to {deploy_dir}")
 
     print(f"[build] output ready at {DIST_DIR / 'HomeCopyClient'}")
 

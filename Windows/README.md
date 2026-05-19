@@ -129,13 +129,9 @@ dist/HomeCopyClient/
 ```
 
 把整个 `HomeCopyClient` 目录复制到另一台 Windows 电脑即可运行。
-打包完成后，脚本还会自动覆盖复制一份到：
+如果你还想额外复制到自定义目录，可以在运行前设置：
 
-```text
-D:\HomeCopyClient
+```powershell
+$env:HOMECOPY_DEPLOY_DIR="D:\HomeCopyClient"
+python scripts\build_client.py
 ```
-
-## 下一步建议
-
-- 优化连接状态提示和错误引导
-- 增加基础集成测试
