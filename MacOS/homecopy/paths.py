@@ -33,3 +33,9 @@ def runtime_data_root() -> Path:
 
 def runtime_env_path() -> Path:
     return runtime_data_root() / ".env"
+
+
+def received_files_root() -> Path:
+    root = runtime_data_root() / "received_files"
+    root.mkdir(parents=True, exist_ok=True)
+    return root

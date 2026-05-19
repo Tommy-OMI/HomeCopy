@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QRectF, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QColor, QIcon, QPainter
+from PySide6.QtCore import QEvent, QRectF, Qt, QTimer, QUrl
+from PySide6.QtGui import QAction, QCloseEvent, QColor, QDesktopServices, QIcon, QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QFrame,
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -49,8 +50,10 @@ from homecopy_shared.startup_policy import (
 )
 from homecopy_shared.ui_formatting import (
     format_device_label,
+    format_history_content,
     format_history_direction,
     format_history_timestamp,
+    format_file_size,
     format_notification_message,
     format_server_display,
 )
@@ -185,7 +188,7 @@ class MainWindow(QMainWindow):
         self.hotkey_manager = GlobalHotkeyManager(self)
         self.server_controller = server_controller or EmbeddedServerController()
         self.minimize_to_tray_notice_shown = False
-        self.highlighted_history_marker: tuple[str, str, str] | None = None
+        self.highlighted_history_marker: tuple[str, str, str, str] | None = None
         self._syncing_history_selection = False
         self.local_server_client_count = 0
         self._quit_requested = False
@@ -353,9 +356,9 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
 
-        title = QLabel("Send Text")
+        title = QLabel("Send Content")
         title.setStyleSheet("font-size: 18px; font-weight: 700; color: #183153;")
-        description = QLabel("Paste a code snippet, link, or short note and send it to another machine.")
+        description = QLabel("Paste text or choose a file and send it to another machine.")
         description.setWordWrap(True)
         description.setStyleSheet("color: #6f655d;")
 
@@ -369,9 +372,11 @@ class MainWindow(QMainWindow):
         button_row = QHBoxLayout()
         button_row.setSpacing(10)
         self.send_button = QPushButton("Send")
+        self.send_file_button = QPushButton("Send File")
         self.clear_button = QPushButton("Clear")
         self.hotkey_button = QPushButton("Hotkey")
         button_row.addWidget(self.send_button)
+        button_row.addWidget(self.send_file_button)
         button_row.addWidget(self.clear_button)
         button_row.addWidget(self.hotkey_button)
         button_row.addStretch(1)
@@ -388,7 +393,7 @@ class MainWindow(QMainWindow):
         history_header_row.addWidget(self.clear_history_button)
 
         self.history_table = QTableWidget(0, 5)
-        self.history_table.setHorizontalHeaderLabels(["Date Time", "Device", "Direction", "Message", ""])
+        self.history_table.setHorizontalHeaderLabels(["Date Time", "Device", "Direction", "Content", ""])
         self.history_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.history_table.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -414,6 +419,7 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         self.send_button.clicked.connect(self._send_current_text)
+        self.send_file_button.clicked.connect(self._send_selected_file)
         self.clear_button.clicked.connect(self.editor.clear)
         self.hotkey_button.clicked.connect(self._open_hotkey_dialog)
         self.connection_button.clicked.connect(self._toggle_client_connection)
@@ -433,6 +439,7 @@ class MainWindow(QMainWindow):
         self.runtime.devices_changed.connect(self._populate_devices)
         self.runtime.server_version_changed.connect(self._handle_server_version_changed)
         self.runtime.incoming_text.connect(self._handle_incoming_text)
+        self.runtime.incoming_file.connect(self._handle_incoming_file)
         self.runtime.ack_received.connect(self._handle_ack)
         self.runtime.error_received.connect(self._handle_error)
         self.runtime.history_changed.connect(self._populate_history)
@@ -512,7 +519,7 @@ class MainWindow(QMainWindow):
             self.tray_icon.setIcon(icon)
         tooltip = "HomeCopy"
         if self._tray_has_unread_message:
-            tooltip = "HomeCopy (new message)"
+            tooltip = "HomeCopy (new item)"
         self.tray_icon.setToolTip(tooltip)
 
     def _set_tray_unread_message(self, has_unread: bool) -> None:
@@ -709,8 +716,10 @@ class MainWindow(QMainWindow):
             history_index = len(history) - 1 - row_index
 
             device_name = str(record["peer_device_name"])
-            message_text = str(record["text"])
             direction = str(record["direction"])
+            history_kind = str(record.get("kind") or "text")
+            message_text = format_history_content(record)
+            history_marker_value = str(record.get("file_path") or record.get("text") or record.get("file_name") or "")
 
             items = [
                 self._build_history_item(format_history_timestamp(str(record["created_at"]))),
@@ -735,9 +744,10 @@ class MainWindow(QMainWindow):
                 and self.highlighted_history_marker is not None
                 and direction == "received"
                 and (
+                    history_kind,
                     str(record["peer_device_id"]),
                     device_name,
-                    message_text,
+                    history_marker_value,
                 )
                 == self.highlighted_history_marker
             ):
@@ -774,13 +784,31 @@ class MainWindow(QMainWindow):
         sender_name = str(message.get("from_name") or message.get("from") or "Unknown device")
         sender_id = str(message.get("from") or "")
         text = str(message.get("text") or "")
-        self.highlighted_history_marker = (sender_id, sender_name, text)
-        self._show_incoming_notification(sender_name, text)
+        self.highlighted_history_marker = ("text", sender_id, sender_name, text)
+        self._show_incoming_notification(sender_name, text=text)
         self.statusBar().showMessage(f"Received text from {sender_name}", 8000)
 
-    def _handle_ack(self, request_id: str) -> None:
-        self.editor.clear()
-        self.statusBar().showMessage(f"Sent successfully ({request_id})", 6000)
+    def _handle_incoming_file(self, message: dict) -> None:
+        sender_name = str(message.get("from_name") or message.get("from") or "Unknown device")
+        sender_id = str(message.get("from") or "")
+        file_name = str(message.get("file_name") or "Unnamed file")
+        saved_path = str(message.get("saved_path") or "")
+        file_size = int(message.get("file_size") or 0)
+        self.highlighted_history_marker = ("file", sender_id, sender_name, saved_path or file_name)
+        self._show_incoming_notification(sender_name, file_name=file_name)
+        self.statusBar().showMessage(
+            f"Received file from {sender_name}: {file_name} ({format_file_size(file_size)})",
+            8000,
+        )
+
+    def _handle_ack(self, payload: dict) -> None:
+        request_id = str(payload.get("request_id") or "")
+        kind = str(payload.get("kind") or "text")
+        if kind == "text":
+            self.editor.clear()
+            self.statusBar().showMessage(f"Text sent successfully ({request_id})", 6000)
+            return
+        self.statusBar().showMessage(f"File sent successfully ({request_id})", 6000)
 
     def _handle_error(self, error_text: str) -> None:
         self.statusBar().showMessage(error_text, 8000)
@@ -815,6 +843,20 @@ class MainWindow(QMainWindow):
         self.runtime.send_text(target_device_id, text)
         self.statusBar().showMessage(f"Sending to {target_device_id}...", 4000)
 
+    def _send_selected_file(self) -> None:
+        target_device_id = self._selected_device_id()
+        if not target_device_id:
+            QMessageBox.information(self, "HomeCopy", "Please select a target device first.")
+            return
+
+        file_path, _selected_filter = QFileDialog.getOpenFileName(self, "Select File to Send")
+        if not file_path:
+            return
+
+        assert self.runtime is not None
+        self.runtime.send_file(target_device_id, file_path)
+        self.statusBar().showMessage(f"Sending file to {target_device_id}...", 4000)
+
     def _handle_history_cell_pressed(self, row: int, column: int) -> None:
         if column == HISTORY_ACTION_COLUMN:
             return
@@ -823,10 +865,26 @@ class MainWindow(QMainWindow):
     def _handle_history_cell_double_clicked(self, row: int, column: int) -> None:
         if column == HISTORY_ACTION_COLUMN:
             return
+        history_index = len(self.current_history) - 1 - row
+        if history_index < 0 or history_index >= len(self.current_history):
+            return
+        record = self.current_history[history_index]
+        if str(record.get("kind") or "text") == "file":
+            file_path = str(record.get("file_path") or "")
+            if not file_path:
+                self.statusBar().showMessage("This file history entry does not have a local path.", 4000)
+                return
+            if not Path(file_path).exists():
+                self.statusBar().showMessage("The file no longer exists at the stored path.", 4000)
+                return
+            QDesktopServices.openUrl(QUrl.fromLocalFile(file_path))
+            self.statusBar().showMessage("Opened the file from history.", 4000)
+            return
+
         item = self.history_table.item(row, HISTORY_MESSAGE_COLUMN)
         if item is None:
             return
-        self.editor.setPlainText(item.text())
+        self.editor.setPlainText(str(record.get("text") or item.text()))
         self.editor.setFocus()
         self.statusBar().showMessage("Loaded message into the editor.", 4000)
 
@@ -920,13 +978,19 @@ class MainWindow(QMainWindow):
     def _is_local_client_target(self) -> bool:
         return is_local_server_url(self.config.server_url)
 
-    def _show_incoming_notification(self, sender_name: str, text: str) -> None:
+    def _show_incoming_notification(
+        self,
+        sender_name: str,
+        *,
+        text: str | None = None,
+        file_name: str | None = None,
+    ) -> None:
         if self._should_mark_tray_unread():
             self._set_tray_unread_message(True)
         if not self.config.show_notification:
             return
 
-        notification_text = format_notification_message(sender_name, text)
+        notification_text = format_notification_message(sender_name, text=text, file_name=file_name)
         if self.tray_icon is not None:
             self.tray_icon.showMessage(
                 "HomeCopy",

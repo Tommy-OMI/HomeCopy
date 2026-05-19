@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 from concurrent.futures import Future
 from datetime import datetime, timezone
+from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
@@ -13,7 +14,17 @@ from homecopy.client.config import ClientConfig
 from homecopy.client.network.client import HomeCopyClient
 from homecopy.client.services.clipboard_service import ClipboardService
 from homecopy.client.services.history_service import HistoryService
-from homecopy.shared.models import ErrorMessage, HistoryRecord, IncomingTextMessage, SendAckMessage
+from homecopy.paths import received_files_root
+from homecopy.shared.models import (
+    ErrorMessage,
+    HistoryRecord,
+    IncomingFileChunkMessage,
+    IncomingFileCompleteMessage,
+    IncomingFileStartMessage,
+    IncomingTextMessage,
+    SendAckMessage,
+)
+from homecopy_shared.file_transfer import IncomingFileStore
 
 
 class ClientRuntimeThread(QThread):
@@ -23,7 +34,8 @@ class ClientRuntimeThread(QThread):
     devices_changed = Signal(list)
     server_version_changed = Signal(str)
     incoming_text = Signal(dict)
-    ack_received = Signal(str)
+    incoming_file = Signal(dict)
+    ack_received = Signal(dict)
     error_received = Signal(str)
     history_changed = Signal(list)
 
@@ -34,8 +46,10 @@ class ClientRuntimeThread(QThread):
         self.loop: asyncio.AbstractEventLoop | None = None
         self.history_service = HistoryService(config.history_path, config.history_limit)
         self.clipboard_service = ClipboardService()
+        self.file_store = IncomingFileStore(received_files_root())
         self.current_devices: list[dict] = []
         self._connection_task: asyncio.Task[None] | None = None
+        self._outbound_request_kinds: dict[str, str] = {}
 
     def run(self) -> None:
         self.loop = asyncio.new_event_loop()
@@ -44,6 +58,9 @@ class ClientRuntimeThread(QThread):
         self.client = HomeCopyClient(self.config)
         self.client.on_device_list = self._handle_device_list
         self.client.on_incoming_text = self._handle_incoming_text
+        self.client.on_incoming_file_start = self._handle_incoming_file_start
+        self.client.on_incoming_file_chunk = self._handle_incoming_file_chunk
+        self.client.on_incoming_file_complete = self._handle_incoming_file_complete
         self.client.on_ack = self._handle_ack
         self.client.on_error = self._handle_error
         self.client.on_status = self._handle_status
@@ -75,6 +92,15 @@ class ClientRuntimeThread(QThread):
 
         future = asyncio.run_coroutine_threadsafe(self.client.send_text(target_device_id, text), self.loop)
         future.add_done_callback(lambda completed: self._after_send(completed, target_device_id, text))
+
+    def send_file(self, target_device_id: str, file_path: str | Path) -> None:
+        if self.loop is None or self.client is None:
+            self.error_received.emit("Client is not connected yet.")
+            return
+
+        path = Path(file_path)
+        future = asyncio.run_coroutine_threadsafe(self.client.send_file(target_device_id, path), self.loop)
+        future.add_done_callback(lambda completed: self._after_send_file(completed, target_device_id, path))
 
     def connect_client(self) -> None:
         if self.loop is None:
@@ -121,12 +147,14 @@ class ClientRuntimeThread(QThread):
         self.server_version_changed.emit("")
         self.status_changed.emit("disconnected")
 
-    def _after_send(self, future: Future[None], target_device_id: str, text: str) -> None:
+    def _after_send(self, future: Future[str], target_device_id: str, text: str) -> None:
         try:
-            future.result()
+            request_id = future.result()
         except Exception as exc:  # pragma: no cover - UI runtime callback
             self.error_received.emit(str(exc))
             return
+
+        self._outbound_request_kinds[request_id] = "text"
 
         peer_name = next(
             (item["device_name"] for item in self.current_devices if item["device_id"] == target_device_id),
@@ -138,6 +166,33 @@ class ClientRuntimeThread(QThread):
                 peer_device_id=target_device_id,
                 peer_device_name=peer_name,
                 text=text,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+        self._emit_history_snapshot()
+
+    def _after_send_file(self, future: Future[str], target_device_id: str, file_path: Path) -> None:
+        try:
+            request_id = future.result()
+        except Exception as exc:  # pragma: no cover - UI runtime callback
+            self.error_received.emit(str(exc))
+            return
+
+        self._outbound_request_kinds[request_id] = "file"
+        peer_name = next(
+            (item["device_name"] for item in self.current_devices if item["device_id"] == target_device_id),
+            target_device_id,
+        )
+        file_size = file_path.stat().st_size if file_path.exists() else 0
+        self.history_service.append(
+            HistoryRecord(
+                direction="sent",
+                peer_device_id=target_device_id,
+                peer_device_name=peer_name,
+                kind="file",
+                file_name=file_path.name,
+                file_size=file_size,
+                file_path=str(file_path),
                 created_at=datetime.now(timezone.utc),
             )
         )
@@ -166,8 +221,66 @@ class ClientRuntimeThread(QThread):
         )
         self._emit_history_snapshot()
 
+    async def _handle_incoming_file_start(self, message: IncomingFileStartMessage) -> None:
+        try:
+            self.file_store.start_transfer(
+                file_id=str(message.file_id),
+                sender_id=message.from_,
+                sender_name=message.from_name,
+                file_name=message.file_name,
+                file_size=message.file_size,
+                mime_type=message.mime_type,
+                sent_at=message.sent_at.isoformat(),
+            )
+        except Exception as exc:
+            self.file_store.discard_transfer(str(message.file_id))
+            self.error_received.emit(f"Failed to initialize incoming file transfer: {exc}")
+
+    async def _handle_incoming_file_chunk(self, message: IncomingFileChunkMessage) -> None:
+        try:
+            self.file_store.append_chunk(
+                file_id=str(message.file_id),
+                chunk_index=message.chunk_index,
+                content_b64=message.content_b64,
+            )
+        except Exception as exc:
+            self.file_store.discard_transfer(str(message.file_id))
+            self.error_received.emit(f"Failed to receive file chunk: {exc}")
+
+    async def _handle_incoming_file_complete(self, message: IncomingFileCompleteMessage) -> None:
+        try:
+            received_file = self.file_store.complete_transfer(
+                file_id=str(message.file_id),
+                total_chunks=message.total_chunks,
+            )
+        except Exception as exc:
+            self.file_store.discard_transfer(str(message.file_id))
+            self.error_received.emit(f"Failed to receive file: {exc}")
+            return
+
+        self.incoming_file.emit(received_file)
+        self.history_service.append(
+            HistoryRecord(
+                direction="received",
+                peer_device_id=str(received_file["from"]),
+                peer_device_name=str(received_file["from_name"]),
+                kind="file",
+                file_name=str(received_file["file_name"]),
+                file_size=int(received_file["file_size"]),
+                file_path=str(received_file["saved_path"]),
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+        self._emit_history_snapshot()
+
     async def _handle_ack(self, message: SendAckMessage) -> None:
-        self.ack_received.emit(f"{message.request_id}")
+        request_id = f"{message.request_id}"
+        self.ack_received.emit(
+            {
+                "request_id": request_id,
+                "kind": self._outbound_request_kinds.pop(request_id, "text"),
+            }
+        )
 
     async def _handle_error(self, message: ErrorMessage) -> None:
         self.error_received.emit(f"{message.code}: {message.message}")

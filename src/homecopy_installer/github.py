@@ -28,7 +28,7 @@ class RemoteSource:
 def _headers() -> dict[str, str]:
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "HomeCopyInstaller/0.9.0",
+        "User-Agent": "HomeCopyInstaller/0.10.0",
     }
     token = os.environ.get("GITHUB_TOKEN")
     if token:

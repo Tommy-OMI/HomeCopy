@@ -25,6 +25,27 @@ def format_history_direction(direction: str) -> str:
     return "Received" if direction == "received" else "Sent"
 
 
+def format_file_size(byte_count: int | None) -> str:
+    if byte_count is None:
+        return "unknown size"
+    size = float(byte_count)
+    units = ["B", "KB", "MB", "GB"]
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{int(byte_count)} B"
+
+
+def format_history_content(record: dict) -> str:
+    if str(record.get("kind") or "text") == "file":
+        file_name = str(record.get("file_name") or "Unnamed file")
+        return f"File: {file_name} ({format_file_size(record.get('file_size'))})"
+    return str(record.get("text") or "")
+
+
 def format_history_timestamp(value: str) -> str:
     normalized = value.replace("Z", "+00:00") if value.endswith("Z") else value
     try:
@@ -41,8 +62,17 @@ def format_server_display(server_url: str) -> str:
     return parts.netloc
 
 
-def format_notification_message(sender_name: str, text: str, *, limit: int = 160) -> str:
-    collapsed = " ".join(text.split())
+def format_notification_message(
+    sender_name: str,
+    *,
+    text: str | None = None,
+    file_name: str | None = None,
+    limit: int = 160,
+) -> str:
+    if file_name:
+        return f"{sender_name} sent {file_name}"
+
+    collapsed = " ".join((text or "").split())
     if not collapsed:
         return f"New text from {sender_name}"
     if len(collapsed) > limit:

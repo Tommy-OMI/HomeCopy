@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
+import mimetypes
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Awaitable, Callable
 from uuid import uuid4
 
@@ -15,6 +18,7 @@ from websockets.asyncio.client import ClientConnection
 
 from homecopy.client.config import ClientConfig
 from homecopy.shared.constants import (
+    DEFAULT_FILE_CHUNK_SIZE,
     DEFAULT_HEARTBEAT_INTERVAL,
     DEFAULT_HEARTBEAT_TIMEOUT,
     DEFAULT_RECONNECT_DELAYS,
@@ -25,6 +29,9 @@ from homecopy.shared.models import (
     DeviceListMessage,
     ErrorMessage,
     HeartbeatAckMessage,
+    IncomingFileChunkMessage,
+    IncomingFileCompleteMessage,
+    IncomingFileStartMessage,
     IncomingTextMessage,
     RegisterOkMessage,
     SendAckMessage,
@@ -35,6 +42,9 @@ logger = logging.getLogger(__name__)
 
 DeviceListHandler = Callable[[list[dict]], Awaitable[None]]
 IncomingHandler = Callable[[IncomingTextMessage], Awaitable[None]]
+IncomingFileStartHandler = Callable[[IncomingFileStartMessage], Awaitable[None]]
+IncomingFileChunkHandler = Callable[[IncomingFileChunkMessage], Awaitable[None]]
+IncomingFileCompleteHandler = Callable[[IncomingFileCompleteMessage], Awaitable[None]]
 AckHandler = Callable[[SendAckMessage], Awaitable[None]]
 ErrorHandler = Callable[[ErrorMessage], Awaitable[None]]
 StatusHandler = Callable[[str], Awaitable[None]]
@@ -49,6 +59,9 @@ class HomeCopyClient:
         self.registered_devices: list[dict] = []
         self.on_device_list: DeviceListHandler | None = None
         self.on_incoming_text: IncomingHandler | None = None
+        self.on_incoming_file_start: IncomingFileStartHandler | None = None
+        self.on_incoming_file_chunk: IncomingFileChunkHandler | None = None
+        self.on_incoming_file_complete: IncomingFileCompleteHandler | None = None
         self.on_ack: AckHandler | None = None
         self.on_error: ErrorHandler | None = None
         self.on_status: StatusHandler | None = None
@@ -108,6 +121,9 @@ class HomeCopyClient:
         register_ok_adapter = TypeAdapter(RegisterOkMessage)
         device_list_adapter = TypeAdapter(DeviceListMessage)
         incoming_adapter = TypeAdapter(IncomingTextMessage)
+        incoming_file_start_adapter = TypeAdapter(IncomingFileStartMessage)
+        incoming_file_chunk_adapter = TypeAdapter(IncomingFileChunkMessage)
+        incoming_file_complete_adapter = TypeAdapter(IncomingFileCompleteMessage)
         ack_adapter = TypeAdapter(SendAckMessage)
         heartbeat_ack_adapter = TypeAdapter(HeartbeatAckMessage)
         error_adapter = TypeAdapter(ErrorMessage)
@@ -139,6 +155,24 @@ class HomeCopyClient:
                     await self.on_incoming_text(incoming)
                 continue
 
+            if message_type == "incoming_file_start":
+                incoming = incoming_file_start_adapter.validate_python(payload)
+                if self.on_incoming_file_start is not None:
+                    await self.on_incoming_file_start(incoming)
+                continue
+
+            if message_type == "incoming_file_chunk":
+                incoming = incoming_file_chunk_adapter.validate_python(payload)
+                if self.on_incoming_file_chunk is not None:
+                    await self.on_incoming_file_chunk(incoming)
+                continue
+
+            if message_type == "incoming_file_complete":
+                incoming = incoming_file_complete_adapter.validate_python(payload)
+                if self.on_incoming_file_complete is not None:
+                    await self.on_incoming_file_complete(incoming)
+                continue
+
             if message_type == "send_ack":
                 ack = ack_adapter.validate_python(payload)
                 if self.on_ack is not None:
@@ -165,17 +199,70 @@ class HomeCopyClient:
 
             logger.warning("Ignored unknown message type=%s payload=%s", message_type, payload)
 
-    async def send_text(self, target_device_id: str, text: str) -> None:
+    async def send_text(self, target_device_id: str, text: str) -> str:
         if self.websocket is None:
             raise RuntimeError("Client is not connected.")
 
+        request_id = str(uuid4())
         payload = {
             "type": "send_text",
-            "request_id": str(uuid4()),
+            "request_id": request_id,
             "to": target_device_id,
             "text": text,
         }
         await self.websocket.send(json.dumps(payload, ensure_ascii=False))
+        return request_id
+
+    async def send_file(self, target_device_id: str, file_path: str | Path) -> str:
+        if self.websocket is None:
+            raise RuntimeError("Client is not connected.")
+
+        path = Path(file_path)
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError(f"File does not exist: {path}")
+
+        request_id = str(uuid4())
+        file_id = str(uuid4())
+        file_size = path.stat().st_size
+        mime_type, _ = mimetypes.guess_type(path.name)
+
+        start_payload = {
+            "type": "send_file_start",
+            "request_id": request_id,
+            "file_id": file_id,
+            "to": target_device_id,
+            "file_name": path.name,
+            "file_size": file_size,
+            "mime_type": mime_type,
+        }
+        await self.websocket.send(json.dumps(start_payload, ensure_ascii=False))
+
+        total_chunks = 0
+        with path.open("rb") as handle:
+            while True:
+                chunk = await asyncio.to_thread(handle.read, DEFAULT_FILE_CHUNK_SIZE)
+                if not chunk:
+                    break
+                chunk_payload = {
+                    "type": "send_file_chunk",
+                    "request_id": request_id,
+                    "file_id": file_id,
+                    "to": target_device_id,
+                    "chunk_index": total_chunks,
+                    "content_b64": base64.b64encode(chunk).decode("ascii"),
+                }
+                await self.websocket.send(json.dumps(chunk_payload, ensure_ascii=False))
+                total_chunks += 1
+
+        complete_payload = {
+            "type": "send_file_complete",
+            "request_id": request_id,
+            "file_id": file_id,
+            "to": target_device_id,
+            "total_chunks": total_chunks,
+        }
+        await self.websocket.send(json.dumps(complete_payload, ensure_ascii=False))
+        return request_id
 
     def _start_heartbeat_task(self) -> None:
         if self._heartbeat_task is None or self._heartbeat_task.done():

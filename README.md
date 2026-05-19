@@ -11,6 +11,13 @@ latest HomeCopy source from GitHub, build the local executable, and update it la
 pip install HomeCopy
 ```
 
+If you are working from a local source checkout and want this machine to expose
+the `homecopy` command directly from the repo:
+
+```bash
+python3 scripts/install_local_cli.py
+```
+
 If `pip` is missing but Python is already installed:
 
 ```bash
