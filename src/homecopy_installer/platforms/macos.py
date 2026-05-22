@@ -22,6 +22,9 @@ def build_and_install(source_root: Path, python_command: PythonCommand) -> Path:
     target_app = installed_app_path()
     replace_tree(built_app, target_app)
 
+    shared_app = Path.home() / "Shared" / "HomeCopy.app"
+    replace_tree(built_app, shared_app)
+
     ensure_directory(data_root())
     env_example = mac_root / ".env.example"
     if env_example.exists():
