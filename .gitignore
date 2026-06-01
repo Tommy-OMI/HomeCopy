@@ -12,3 +12,6 @@ logs/
 client_history.json
 configs/clients/*.json
 !configs/clients/.gitkeep
+*.log
+MacOS/.pyinstaller-cache/
+.claude/
